@@ -1,12 +1,17 @@
 // Service worker — fonctionnement hors-ligne SANS bloquer les mises à jour.
 // Stratégie : "network-first" pour la page (toujours la dernière version en ligne),
 // "cache-first" pour les ressources statiques (icônes…).
-const CACHE = "ma-pesee-v18";
+const CACHE = "ma-pesee-v19";
 const ASSETS = ["index.html", "manifest.json", "sw.js",
   "icon-180.png", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // Mise en cache résiliente : un asset manquant ne fait pas échouer toute l'installation.
+  e.waitUntil(
+    caches.open(CACHE)
+      .then(c => Promise.allSettled(ASSETS.map(a => c.add(a))))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener("activate", e => {
