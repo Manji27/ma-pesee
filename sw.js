@@ -1,5 +1,7 @@
-// Service worker — cache l'app pour un fonctionnement 100% hors-ligne.
-const CACHE = "ma-pesee-v10";
+// Service worker — fonctionnement hors-ligne SANS bloquer les mises à jour.
+// Stratégie : "network-first" pour la page (toujours la dernière version en ligne),
+// "cache-first" pour les ressources statiques (icônes…).
+const CACHE = "ma-pesee-v11";
 const ASSETS = ["index.html", "manifest.json", "sw.js",
   "icon-180.png", "icon-192.png", "icon-512.png"];
 
@@ -16,6 +18,23 @@ self.addEventListener("activate", e => {
 
 self.addEventListener("fetch", e => {
   if (e.request.method !== "GET") return;
+  const url = new URL(e.request.url);
+  const isPage = e.request.mode === "navigate"
+    || url.pathname.endsWith("/") || url.pathname.endsWith("index.html");
+
+  if (isPage) {
+    // Toujours tenter le réseau d'abord -> dernière version garantie quand en ligne.
+    e.respondWith(
+      fetch(e.request).then(res => {
+        const copy = res.clone();
+        caches.open(CACHE).then(c => c.put("index.html", copy)).catch(() => {});
+        return res;
+      }).catch(() => caches.match(e.request).then(r => r || caches.match("index.html")))
+    );
+    return;
+  }
+
+  // Ressources statiques : cache d'abord, réseau en secours.
   e.respondWith(
     caches.match(e.request).then(cached =>
       cached || fetch(e.request).then(res => {
