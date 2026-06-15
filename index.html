@@ -650,6 +650,16 @@ function exportJson(){
   download('ma-pesee-'+todayISO()+'.json', JSON.stringify(data,null,2), 'application/json');
   toast('JSON exporté'); closeSheet();
 }
+// Normalise une date vers AAAA-MM-JJ (accepte aussi JJ/MM/AAAA et JJ-MM-AAAA).
+function normDate(s){
+  s=String(s).trim();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if(m){ const d=+m[1], mo=+m[2], y=+m[3];
+    if(d>=1 && d<=31 && mo>=1 && mo<=12) return y+'-'+String(mo).padStart(2,'0')+'-'+String(d).padStart(2,'0'); }
+  return null;
+}
+
 // Valide une entrée importée : date réelle au format YYYY-MM-DD + poids plausible.
 function validEntry(e){
   if(!e || typeof e.date!=='string' || !/^\d{4}-\d{2}-\d{2}$/.test(e.date)) return false;
@@ -669,11 +679,20 @@ function importFile(file){
         const parsed=JSON.parse(txt);
         // accepte l'ancien format (tableau) ET une future enveloppe {entries:[...]}
         imported=Array.isArray(parsed) ? parsed : (Array.isArray(parsed.entries)?parsed.entries:[]);
-      } else { // CSV
-        txt.split(/\r?\n/).slice(1).forEach(line=>{
-          if(!line.trim()) return;
-          const [date,kg]=line.split(',');
-          if(date&&kg) imported.push({date:date.trim(), kg:parseFloat(String(kg).replace(',','.'))});
+      } else { // CSV — détection auto du séparateur, de l'ordre des colonnes et du format date/décimale
+        const lines=txt.split(/\r?\n/).filter(l=>l.trim());
+        const sep = lines.length ? (lines[0].includes(';')?';':(lines[0].includes('\t')?'\t':',')) : ',';
+        lines.forEach(line=>{
+          const fields=line.split(sep).map(f=>f.trim());
+          let d=null, kg=null;
+          for(const f of fields){ const nd=normDate(f); if(nd){ d=nd; break; } }       // 1re colonne ressemblant à une date
+          for(const f of fields){                                                       // 1re colonne numérique (≠ date)
+            if(normDate(f)) continue;
+            if(!/\d/.test(f)) continue;
+            const n=parseFloat(f.replace(',','.').replace(/[^0-9.\-]/g,''));
+            if(isFinite(n)){ kg=n; break; }
+          }
+          if(d!=null && kg!=null) imported.push({date:d, kg});
         });
       }
       // validation + normalisation (0,1 kg)
