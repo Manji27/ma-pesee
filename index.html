@@ -158,7 +158,7 @@
     -ms-overflow-style:none;scrollbar-width:none;
     -webkit-mask-image:linear-gradient(to bottom,transparent,#000 34%,#000 66%,transparent);
     mask-image:linear-gradient(to bottom,transparent,#000 34%,#000 66%,transparent)}
-  #wheelKg{width:96px} #wheelG{width:104px}
+  #wheelKg{width:84px} #wheelG{width:54px} #wheelG2{width:54px}
   .wheel::-webkit-scrollbar{display:none}
   .wheel .it{height:44px;line-height:44px;scroll-snap-align:center;font-size:30px;
     font-weight:800;color:var(--muted);transition:color .12s,transform .12s}
@@ -179,7 +179,7 @@
   <header>
     <div class="brand">
       <h1>Ma <span>Pesée</span></h1>
-      <span class="ver">v17</span>
+      <span class="ver">v18</span>
     </div>
     <button class="menu-btn" id="menuBtn" aria-label="Menu">⋯</button>
   </header>
@@ -205,7 +205,7 @@
       </button>
       <button id="addBtn">Ajouter</button>
     </div>
-    <div class="hint">Touche le poids pour le régler à la molette (au dixième de kilo) · choisis la date pour une ancienne pesée</div>
+    <div class="hint">Touche le poids pour le régler à la molette (au centième de kilo) · choisis la date pour une ancienne pesée</div>
   </section>
 
   <div class="stats" id="stats" style="display:none">
@@ -242,6 +242,7 @@
     <div class="wheel" id="wheelKg"></div>
     <div class="sep">,</div>
     <div class="wheel" id="wheelG"></div>
+    <div class="wheel" id="wheelG2"></div>
     <div class="punit">kg</div>
     <div class="center-band"></div>
   </div>
@@ -350,8 +351,8 @@ function save(){ if(persistStore()) schedulePush(); }
 
 /* ---------- Helpers ---------- */
 function todayISO(){ const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10); }
-function fmt(kg){ return kg.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}); }
-function fmtDelta(g){ const s=g>0?'+':''; return s+(g/1000).toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})+' kg'; }
+function fmt(kg){ return kg.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function fmtDelta(g){ const s=g>0?'+':''; return s+(g/1000).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' kg'; }
 function prettyDate(iso){
   const [y,m,d]=iso.split('-');
   const dt=new Date(+y,+m-1,+d);
@@ -576,7 +577,7 @@ function clearGoal(){
 
 /* ---------- Molette de poids ---------- */
 const KGMIN=20, KGMAX=250, IT=44;       // bornes kg + hauteur d'un cran (px)
-const wheelKg=$('#wheelKg'), wheelG=$('#wheelG');
+const wheelKg=$('#wheelKg'), wheelG=$('#wheelG'), wheelG2=$('#wheelG2');
 
 function buildWheel(el, count, fmtFn){
   let h='<div class="pad"></div>';
@@ -596,18 +597,20 @@ function currentPickValue(){
 }
 function openPicker(){
   const base=currentPickValue();
-  let kg=Math.floor(base), gr=Math.round((base-kg)*10);   // dixièmes
-  if(gr>9){ kg+=1; gr=0; }
+  let kg=Math.floor(base), c=Math.round((base-kg)*100);   // centièmes (0..99)
+  if(c>99){ kg+=1; c=0; }
   kg=Math.min(Math.max(kg,KGMIN),KGMAX);
+  const t=Math.floor(c/10), h=c%10;                       // dixièmes, centièmes
   $('#pickOverlay').classList.add('show'); $('#pickSheet').classList.add('show');
   // le scroll doit être réglé après l'affichage de la feuille
-  requestAnimationFrame(()=>{ setWheel(wheelKg, kg-KGMIN); setWheel(wheelG, gr); });
+  requestAnimationFrame(()=>{ setWheel(wheelKg, kg-KGMIN); setWheel(wheelG, t); setWheel(wheelG2, h); });
 }
 function closePicker(){ $('#pickOverlay').classList.remove('show'); $('#pickSheet').classList.remove('show'); }
 function validatePick(){
   const kg=KGMIN+wheelIndex(wheelKg);
-  const gr=wheelIndex(wheelG);            // 0..9 dixièmes
-  pickedKg=Math.round((kg+gr/10)*10)/10;
+  const t=wheelIndex(wheelG);             // dixièmes
+  const h=wheelIndex(wheelG2);            // centièmes
+  pickedKg=Math.round((kg+t/10+h/100)*100)/100;
   $('#weightPickVal').textContent=fmt(pickedKg);
   closePicker();
 }
@@ -718,7 +721,7 @@ function importFile(file){
       }
       // validation + normalisation (0,1 kg)
       const valid=[]; let ignored=0;
-      imported.forEach(e=>{ if(validEntry(e)) valid.push({date:e.date, kg:Math.round(Number(e.kg)*10)/10}); else ignored++; });
+      imported.forEach(e=>{ if(validEntry(e)) valid.push({date:e.date, kg:Math.round(Number(e.kg)*100)/100}); else ignored++; });
       if(!valid.length){ toast('Aucune donnée valide dans ce fichier'); return; }
       // aperçu avant d'appliquer
       const existing=new Set(data.map(e=>e.date));
@@ -911,6 +914,7 @@ $('#pickValidate').onclick=validatePick;
 $('#pickOverlay').onclick=closePicker;
 wheelKg.addEventListener('scroll',()=>{ highlight(wheelKg); });
 wheelG.addEventListener('scroll',()=>{ highlight(wheelG); });
+wheelG2.addEventListener('scroll',()=>{ highlight(wheelG2); });
 $('#menuBtn').onclick=openSheet;
 $('#overlay').onclick=closeSheet;
 $('#expCsv').onclick=exportCsv;
@@ -953,6 +957,7 @@ $('#dateInput').value = todayISO();
 if(goal) $('#goalInput').value = fmt(goal);
 buildWheel(wheelKg, KGMAX-KGMIN+1, i=>KGMIN+i);
 buildWheel(wheelG, 10, i=>String(i));
+buildWheel(wheelG2, 10, i=>String(i));
 render();
 initSync();
 </script>
