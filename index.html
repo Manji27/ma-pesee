@@ -283,7 +283,7 @@
   <button id="importBtn"><span class="ic">📥</span> Importer un fichier</button>
   <button id="clearBtn" class="danger"><span class="ic">🗑️</span> Tout effacer</button>
   <input type="file" id="fileInput" accept=".json,.csv" style="display:none">
-  <div style="text-align:center;color:var(--muted);font-size:11px;margin-top:10px">Ma Pesée · v11</div>
+  <div style="text-align:center;color:var(--muted);font-size:11px;margin-top:10px">Ma Pesée · v12</div>
 </div>
 <div class="toast" id="toast"></div>
 <div class="snack" id="undoBar"><span id="undoMsg"></span><button id="undoBtn">Annuler</button></div>
@@ -651,6 +651,22 @@ function exportJson(){
   download('ma-pesee-'+todayISO()+'.json', JSON.stringify(data,null,2), 'application/json');
   toast('JSON exporté'); closeSheet();
 }
+// Découpe une ligne CSV en respectant les champs entre guillemets ("75,3" reste entier).
+function splitCSV(line, sep){
+  const out=[]; let cur='', inQ=false;
+  for(let i=0;i<line.length;i++){
+    const c=line[i];
+    if(inQ){
+      if(c==='"'){ if(line[i+1]==='"'){ cur+='"'; i++; } else inQ=false; }
+      else cur+=c;
+    } else if(c==='"'){ inQ=true; }
+    else if(c===sep){ out.push(cur); cur=''; }
+    else cur+=c;
+  }
+  out.push(cur);
+  return out;
+}
+
 // Normalise une date vers AAAA-MM-JJ (accepte aussi JJ/MM/AAAA et JJ-MM-AAAA).
 function normDate(s){
   s=String(s).trim();
@@ -684,7 +700,7 @@ function importFile(file){
         const lines=txt.split(/\r?\n/).filter(l=>l.trim());
         const sep = lines.length ? (lines[0].includes(';')?';':(lines[0].includes('\t')?'\t':',')) : ',';
         lines.forEach(line=>{
-          const fields=line.split(sep).map(f=>f.trim());
+          const fields=splitCSV(line, sep).map(f=>f.trim());
           let d=null, kg=null;
           for(const f of fields){ const nd=normDate(f); if(nd){ d=nd; break; } }       // 1re colonne ressemblant à une date
           for(const f of fields){                                                       // 1re colonne numérique (≠ date)
