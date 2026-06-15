@@ -250,6 +250,10 @@
   <!-- Étapes d'activation (visibles tant que non activé) -->
   <div id="backupSetup">
     <button id="genTokenBtn"><span class="ic">①</span> Créer un jeton sur GitHub</button>
+    <div class="backup-box" style="margin-top:-2px">
+      ⚠️ Important : sur GitHub, choisis <b>Expiration : No expiration</b>.
+      Sinon la sauvegarde s'arrêtera silencieusement après 30 jours.
+    </div>
     <input id="tokenInput" type="text" inputmode="text" autocapitalize="off" autocorrect="off"
            spellcheck="false" placeholder="② Colle le jeton ici (ghp_…)">
     <button id="saveTokenBtn"><span class="ic">③</span> Activer la sauvegarde</button>
@@ -278,19 +282,58 @@
 <script>
 "use strict";
 const KEY = "maPesee.v1";
+const BAK = KEY + ".bak";          // dernière copie valide connue
+const STAMP = KEY + ".savedAt";    // horodatage du dernier enregistrement local
 const $ = s => document.querySelector(s);
+let corruptOnBoot = false;         // vrai si les données principales étaient illisibles au démarrage
 let data = load();          // [{date:"YYYY-MM-DD", kg:Number}]
 let range = 90;
 const GOAL_KEY = "maPesee.goal";
 let goal = parseFloat(localStorage.getItem(GOAL_KEY)) || 0;
 
 /* ---------- Stockage ---------- */
+function parseArr(s){ const d=JSON.parse(s); if(!Array.isArray(d)) throw new Error('format invalide'); return d; }
+
 function load(){
-  try{ const d = JSON.parse(localStorage.getItem(KEY)) || []; return d.sort(byDate); }
-  catch(e){ return []; }
+  const raw = localStorage.getItem(KEY);
+  if(raw != null){
+    try{ return parseArr(raw).sort(byDate); }
+    catch(e){
+      // Données principales illisibles : NE JAMAIS écraser. Tenter la copie de secours.
+      console.error('maPesee: données principales illisibles', e);
+      try{ const b=localStorage.getItem(BAK); if(b!=null){ const d=parseArr(b).sort(byDate); localStorage.setItem(KEY, b); return d; } }catch(_){}
+      try{ localStorage.setItem(KEY+'.corrupt', raw); }catch(_){}  // garde l'original pour récupération manuelle
+      corruptOnBoot = true;
+      return [];
+    }
+  }
+  // Clé absente : restaurer depuis la copie de secours si elle existe.
+  try{ const b=localStorage.getItem(BAK); if(b!=null){ const d=parseArr(b).sort(byDate); if(d.length){ localStorage.setItem(KEY, b); return d; } } }catch(_){}
+  return [];
 }
-function save(){ localStorage.setItem(KEY, JSON.stringify(data)); schedulePush(); }
 function byDate(a,b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }
+
+// Écriture locale défensive : copie de secours + garde-fou anti-écrasement + gestion du quota.
+function persistStore(){
+  // Garde-fou : après un démarrage corrompu, ne pas remplacer des données illisibles par du vide.
+  if(data.length===0 && corruptOnBoot){
+    const prev=localStorage.getItem(KEY);
+    if(prev && prev!=='[]') return false;
+  }
+  try{
+    const prev=localStorage.getItem(KEY);
+    if(prev){ try{ if(parseArr(prev).length) localStorage.setItem(BAK, prev); }catch(_){} } // .bak = dernier état valide
+    localStorage.setItem(KEY, JSON.stringify(data));
+    localStorage.setItem(STAMP, new Date().toISOString());
+    corruptOnBoot = false;
+    return true;
+  }catch(e){
+    console.error('maPesee: échec écriture', e);
+    toast('⚠️ Stockage plein — pesée non enregistrée. Exporte tes données.');
+    return false;
+  }
+}
+function save(){ if(persistStore()) schedulePush(); }
 
 /* ---------- Helpers ---------- */
 function todayISO(){ const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10); }
@@ -608,7 +651,7 @@ function clearAll(){
 }
 
 /* ---------- Sauvegarde GitHub (Gist privé) ---------- */
-const TOKEN_KEY="maPesee.token", GIST_KEY="maPesee.gistId";
+const TOKEN_KEY="maPesee.token", GIST_KEY="maPesee.gistId", GSTAMP="maPesee.gistSavedAt";
 const GIST_DESC="ma-pesee-backup", GIST_FILE="ma-pesee-data.json";
 let token=localStorage.getItem(TOKEN_KEY)||"";
 let gistId=localStorage.getItem(GIST_KEY)||"";
@@ -699,7 +742,7 @@ function mergeRemote(remote){
   const map=new Map(data.map(e=>[e.date,e.kg]));
   remote.forEach(e=>{ if(e&&e.date&&!isNaN(e.kg)) map.set(e.date, Math.round(e.kg*1000)/1000); });
   data=[...map].map(([date,kg])=>({date,kg})).sort(byDate);
-  localStorage.setItem(KEY, JSON.stringify(data));
+  persistStore();
   render();
 }
 
@@ -724,7 +767,7 @@ async function pushNow(){
       r=await api('/gists', {method:'POST', body:gistPayload()});
       if(r.ok){ const g=await r.json(); gistId=g.id; localStorage.setItem(GIST_KEY, gistId); }
     }
-    if(r && r.ok){ setSync('ok','Sauvegardé ✓'); }
+    if(r && r.ok){ localStorage.setItem(GSTAMP, new Date().toISOString()); setSync('ok','Sauvegardé ✓'); refreshBackupUI(); }
     else throw new Error('push');
   }catch(e){
     setSync('err','hors-ligne — réessai auto');
@@ -734,13 +777,23 @@ async function pushNow(){
   }
 }
 
+function fmtStamp(iso){
+  return new Date(iso).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+}
+function backupAgeLine(){
+  const s=localStorage.getItem(GSTAMP);
+  if(!s) return '';
+  const ageDays=(Date.now()-new Date(s).getTime())/86400000;
+  const warn = ageDays>7 ? ' <b style="color:var(--bad)">⚠️ Aucune sauvegarde depuis &gt;7 j — vérifie ton jeton (peut-être expiré).</b>' : '';
+  return '<br><span style="color:var(--muted)">Dernière sauvegarde réussie : '+fmtStamp(s)+'.</span>'+warn;
+}
 function refreshBackupUI(){
   const on=!!token;
   $('#backupSetup').style.display = on ? 'none' : 'block';
   $('#restoreBtn').style.display = on ? 'flex' : 'none';
   $('#backupBtn').style.display = on ? 'flex' : 'none';
   $('#backupBox').innerHTML = on
-    ? 'Sauvegarde <b>active</b> ✓ — tes pesées sont copiées automatiquement dans ton Gist privé GitHub à chaque modification. Sur un autre appareil, colle le même jeton pour tout récupérer.'
+    ? 'Sauvegarde <b>active</b> ✓ — copiée automatiquement dans ton Gist privé à chaque modification. Sur un autre appareil, colle le même jeton pour tout récupérer.' + backupAgeLine()
     : 'Tes données ne sont que sur ce téléphone. Active la sauvegarde pour les copier automatiquement dans un <b>Gist privé GitHub</b> (invisible des autres) et ne jamais les perdre.';
 }
 
@@ -794,6 +847,12 @@ $('#ranges').querySelectorAll('button').forEach(b=>{
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('sw.js').catch(()=>{});
 }
+
+/* ---------- Stockage durable (anti-éviction iOS/navigateur) ---------- */
+if(navigator.storage && navigator.storage.persist){ navigator.storage.persist().catch(()=>{}); }
+
+// Alerte visible si les données étaient illisibles au démarrage.
+if(corruptOnBoot){ setTimeout(()=>toast('⚠️ Données illisibles au démarrage — réimporte ta dernière sauvegarde'), 600); }
 
 $('#dateInput').max = todayISO();
 $('#dateInput').value = todayISO();
