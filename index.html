@@ -83,7 +83,8 @@
   .overlay.show{opacity:1;pointer-events:auto}
   .sheet{position:fixed;left:0;right:0;bottom:0;background:var(--bg2);border-top:1px solid var(--line);
     border-radius:22px 22px 0 0;padding:10px 16px calc(20px + env(safe-area-inset-bottom));
-    transform:translateY(100%);transition:.25s cubic-bezier(.2,.8,.2,1);z-index:21;max-width:560px;margin:0 auto}
+    transform:translateY(100%);transition:.25s cubic-bezier(.2,.8,.2,1);z-index:21;max-width:560px;margin:0 auto;
+    max-height:88vh;overflow-y:auto}
   .sheet.show{transform:translateY(0)}
   .grip{width:42px;height:5px;background:var(--line);border-radius:3px;margin:6px auto 14px}
   .sheet h3{margin:0 0 12px;font-size:14px;color:var(--muted);font-weight:600}
@@ -96,6 +97,19 @@
     background:var(--accent);color:#04293f;font-weight:700;padding:12px 20px;border-radius:30px;
     opacity:0;pointer-events:none;transition:.25s;z-index:30;font-size:14px}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* Sauvegarde */
+  .sync-pill{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;
+    color:var(--muted);background:var(--card);border:1px solid var(--line);
+    padding:7px 12px;border-radius:30px;margin:-6px 0 16px;width:fit-content}
+  .sync-pill .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none}
+  .sync-pill.ok .dot{background:var(--good)} .sync-pill.ok{color:var(--good)}
+  .sync-pill.sync .dot{background:var(--accent);animation:pulse 1s infinite}
+  .sync-pill.err .dot{background:var(--bad)} .sync-pill.err{color:var(--bad)}
+  @keyframes pulse{50%{opacity:.3}}
+  .backup-box{background:var(--card);border:1px solid var(--line);border-radius:13px;
+    padding:14px;margin-bottom:9px;font-size:13px;color:var(--muted);line-height:1.5}
+  .backup-box b{color:var(--txt)}
 </style>
 </head>
 <body>
@@ -104,6 +118,10 @@
     <h1>Ma <span>Pesée</span></h1>
     <button class="menu-btn" id="menuBtn" aria-label="Menu">⋯</button>
   </header>
+
+  <div class="sync-pill" id="syncPill" style="display:none">
+    <span class="dot"></span><span id="syncText">Sauvegarde non activée</span>
+  </div>
 
   <section class="hero">
     <div class="label">Poids actuel</div>
@@ -148,7 +166,16 @@
 <div class="overlay" id="overlay"></div>
 <div class="sheet" id="sheet">
   <div class="grip"></div>
-  <h3>Données &amp; export</h3>
+
+  <h3>Sauvegarde automatique</h3>
+  <div class="backup-box" id="backupBox">
+    Tes données ne sont que sur ce téléphone. Active la sauvegarde pour les copier
+    automatiquement dans un <b>Gist privé GitHub</b> (invisible des autres) et ne jamais les perdre.
+  </div>
+  <button id="backupBtn"><span class="ic">☁️</span> <span id="backupBtnLabel">Activer la sauvegarde</span></button>
+  <button id="restoreBtn"><span class="ic">🔄</span> Synchroniser maintenant</button>
+
+  <h3 style="margin-top:18px">Données &amp; export</h3>
   <button id="expCsv"><span class="ic">📄</span> Exporter en CSV</button>
   <button id="expJson"><span class="ic">🗂️</span> Exporter en JSON</button>
   <button id="importBtn"><span class="ic">📥</span> Importer un fichier</button>
@@ -169,7 +196,7 @@ function load(){
   try{ const d = JSON.parse(localStorage.getItem(KEY)) || []; return d.sort(byDate); }
   catch(e){ return []; }
 }
-function save(){ localStorage.setItem(KEY, JSON.stringify(data)); }
+function save(){ localStorage.setItem(KEY, JSON.stringify(data)); schedulePush(); }
 function byDate(a,b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }
 
 /* ---------- Helpers ---------- */
@@ -371,6 +398,145 @@ function clearAll(){
   data=[]; save(); render(); toast('Tout effacé'); closeSheet();
 }
 
+/* ---------- Sauvegarde GitHub (Gist privé) ---------- */
+const TOKEN_KEY="maPesee.token", GIST_KEY="maPesee.gistId";
+const GIST_DESC="ma-pesee-backup", GIST_FILE="ma-pesee-data.json";
+let token=localStorage.getItem(TOKEN_KEY)||"";
+let gistId=localStorage.getItem(GIST_KEY)||"";
+let pushTimer=null, pushing=false, dirty=false;
+
+function setSync(state, text){
+  const pill=$('#syncPill'), t=$('#syncText');
+  if(!token){ pill.style.display='none'; return; }
+  pill.style.display='flex';
+  pill.className='sync-pill '+(state||'');
+  t.textContent=text;
+}
+function api(path, opts={}){
+  return fetch('https://api.github.com'+path, {
+    ...opts,
+    headers:{'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json',
+      'Content-Type':'application/json', ...(opts.headers||{})}
+  });
+}
+function gistPayload(){
+  return JSON.stringify({description:GIST_DESC, public:false,
+    files:{[GIST_FILE]:{content:JSON.stringify(data,null,2)}}});
+}
+
+async function activateBackup(){
+  if(token){ // déjà activé -> proposer de déconnecter
+    if(confirm('Désactiver la sauvegarde sur cet appareil ?\n(Tes données restent dans GitHub et sur ce téléphone.)')){
+      token=''; gistId=''; localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(GIST_KEY);
+      refreshBackupUI(); setSync('','non activée'); $('#syncPill').style.display='none';
+      toast('Sauvegarde désactivée');
+    }
+    return;
+  }
+  const help='1. La page GitHub va s\'ouvrir : connecte-toi puis clique « Generate token » tout en bas.\n'
+    +'2. Copie le jeton (commence par ghp_…)\n3. Reviens ici et colle-le.';
+  alert(help);
+  window.open('https://github.com/settings/tokens/new?scopes=gist&description=Ma%20Pesee','_blank');
+  const tk=prompt('Colle ton jeton GitHub ici :');
+  if(!tk) return;
+  token=tk.trim();
+  setSync('sync','Connexion…');
+  try{
+    const me=await api('/user');
+    if(!me.ok) throw new Error('token');
+    localStorage.setItem(TOKEN_KEY, token);
+    await syncFindOrCreate();
+    refreshBackupUI();
+    toast('Sauvegarde activée ✓');
+  }catch(e){
+    token=''; localStorage.removeItem(TOKEN_KEY);
+    setSync('err','échec'); $('#syncPill').style.display='none';
+    toast('Jeton invalide, réessaie');
+  }
+}
+
+// Trouve le Gist existant (autre appareil) ou le crée. Fusionne les données.
+async function syncFindOrCreate(){
+  setSync('sync','Synchronisation…');
+  let found=gistId;
+  if(!found){
+    const r=await api('/gists?per_page=100');
+    if(r.ok){
+      const list=await r.json();
+      const g=list.find(x=>x.description===GIST_DESC || (x.files&&x.files[GIST_FILE]));
+      if(g) found=g.id;
+    }
+  }
+  if(found){ // un backup existe : on récupère et on fusionne
+    const r=await api('/gists/'+found);
+    if(r.ok){
+      const g=await r.json();
+      const raw=g.files[GIST_FILE]?g.files[GIST_FILE].content:'[]';
+      let remote=[]; try{ remote=JSON.parse(raw)||[]; }catch(e){}
+      mergeRemote(remote);
+      gistId=found; localStorage.setItem(GIST_KEY, gistId);
+    }
+  }
+  await pushNow(); // pousse l'état fusionné (crée le gist si besoin)
+}
+
+// Fusion : union par date ; en cas de conflit même jour, le distant (durable) gagne.
+function mergeRemote(remote){
+  const map=new Map(data.map(e=>[e.date,e.kg]));
+  remote.forEach(e=>{ if(e&&e.date&&!isNaN(e.kg)) map.set(e.date, Math.round(e.kg*1000)/1000); });
+  data=[...map].map(([date,kg])=>({date,kg})).sort(byDate);
+  localStorage.setItem(KEY, JSON.stringify(data));
+  render();
+}
+
+function schedulePush(){
+  if(!token) return;
+  dirty=true;
+  setSync('sync','Sauvegarde…');
+  clearTimeout(pushTimer);
+  pushTimer=setTimeout(pushNow, 1500);
+}
+
+async function pushNow(){
+  if(!token || pushing){ return; }
+  pushing=true; dirty=false;
+  try{
+    let r;
+    if(gistId){
+      r=await api('/gists/'+gistId, {method:'PATCH', body:gistPayload()});
+      if(r.status===404){ gistId=''; } // gist supprimé -> recrée
+    }
+    if(!gistId){
+      r=await api('/gists', {method:'POST', body:gistPayload()});
+      if(r.ok){ const g=await r.json(); gistId=g.id; localStorage.setItem(GIST_KEY, gistId); }
+    }
+    if(r && r.ok){ setSync('ok','Sauvegardé ✓'); }
+    else throw new Error('push');
+  }catch(e){
+    setSync('err','hors-ligne — réessai auto');
+  }finally{
+    pushing=false;
+    if(dirty) schedulePush(); // changements survenus pendant l'envoi
+  }
+}
+
+function refreshBackupUI(){
+  const on=!!token;
+  $('#backupBtnLabel').textContent = on ? 'Désactiver la sauvegarde' : 'Activer la sauvegarde';
+  $('#restoreBtn').style.display = on ? 'flex' : 'none';
+  $('#backupBox').innerHTML = on
+    ? 'Sauvegarde <b>active</b> ✓ — tes pesées sont copiées automatiquement dans ton Gist privé GitHub à chaque modification. Sur un autre appareil, colle le même jeton pour tout récupérer.'
+    : 'Tes données ne sont que sur ce téléphone. Active la sauvegarde pour les copier automatiquement dans un <b>Gist privé GitHub</b> (invisible des autres) et ne jamais les perdre.';
+}
+
+async function initSync(){
+  refreshBackupUI();
+  if(token){
+    setSync('ok','Sauvegardé ✓');
+    try{ await syncFindOrCreate(); }catch(e){ setSync('err','hors-ligne'); }
+  }
+}
+
 /* ---------- Menu sheet ---------- */
 function openSheet(){ $('#overlay').classList.add('show'); $('#sheet').classList.add('show'); }
 function closeSheet(){ $('#overlay').classList.remove('show'); $('#sheet').classList.remove('show'); }
@@ -385,6 +551,8 @@ $('#expJson').onclick=exportJson;
 $('#importBtn').onclick=()=>$('#fileInput').click();
 $('#fileInput').onchange=e=>{ if(e.target.files[0]) importFile(e.target.files[0]); e.target.value=''; };
 $('#clearBtn').onclick=clearAll;
+$('#backupBtn').onclick=activateBackup;
+$('#restoreBtn').onclick=async()=>{ closeSheet(); try{ await syncFindOrCreate(); toast('Synchronisé ✓'); }catch(e){ toast('Échec de synchro'); } };
 $('#ranges').querySelectorAll('button').forEach(b=>{
   b.onclick=()=>{ range=+b.dataset.r; $('#ranges').querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); renderChart(); };
 });
@@ -395,6 +563,7 @@ if('serviceWorker' in navigator){
 }
 
 render();
+initSync();
 </script>
 </body>
 </html>
