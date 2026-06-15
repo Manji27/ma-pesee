@@ -193,7 +193,7 @@
       </button>
       <button id="addBtn">Ajouter</button>
     </div>
-    <div class="hint">Touche le poids pour le régler à la molette (au gramme) · choisis la date pour une ancienne pesée</div>
+    <div class="hint">Touche le poids pour le régler à la molette (au dixième de kilo) · choisis la date pour une ancienne pesée</div>
   </section>
 
   <div class="stats" id="stats" style="display:none">
@@ -261,7 +261,7 @@
 
   <h3 style="margin-top:18px">Objectif de poids</h3>
   <div class="goalrow">
-    <input id="goalInput" type="text" inputmode="decimal" autocomplete="off" placeholder="ex : 70,000">
+    <input id="goalInput" type="text" inputmode="decimal" autocomplete="off" placeholder="ex : 70,5">
     <button id="goalSave">OK</button>
     <button id="goalClear" title="Retirer l'objectif">✕</button>
   </div>
@@ -294,8 +294,8 @@ function byDate(a,b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }
 
 /* ---------- Helpers ---------- */
 function todayISO(){ const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10); }
-function fmt(kg){ return kg.toLocaleString('fr-FR',{minimumFractionDigits:3,maximumFractionDigits:3}); }
-function fmtDelta(g){ const s=g>0?'+':''; return s+(g/1000).toLocaleString('fr-FR',{minimumFractionDigits:3,maximumFractionDigits:3})+' kg'; }
+function fmt(kg){ return kg.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1}); }
+function fmtDelta(g){ const s=g>0?'+':''; return s+(g/1000).toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})+' kg'; }
 function prettyDate(iso){
   const [y,m,d]=iso.split('-');
   const dt=new Date(+y,+m-1,+d);
@@ -519,8 +519,8 @@ function currentPickValue(){
 }
 function openPicker(){
   const base=currentPickValue();
-  let kg=Math.floor(base), gr=Math.round((base-kg)*1000);
-  if(gr>999){ kg+=1; gr=0; }
+  let kg=Math.floor(base), gr=Math.round((base-kg)*10);   // dixièmes
+  if(gr>9){ kg+=1; gr=0; }
   kg=Math.min(Math.max(kg,KGMIN),KGMAX);
   $('#pickOverlay').classList.add('show'); $('#pickSheet').classList.add('show');
   // le scroll doit être réglé après l'affichage de la feuille
@@ -529,8 +529,8 @@ function openPicker(){
 function closePicker(){ $('#pickOverlay').classList.remove('show'); $('#pickSheet').classList.remove('show'); }
 function validatePick(){
   const kg=KGMIN+wheelIndex(wheelKg);
-  const gr=wheelIndex(wheelG);
-  pickedKg=Math.round((kg+gr/1000)*1000)/1000;
+  const gr=wheelIndex(wheelG);            // 0..9 dixièmes
+  pickedKg=Math.round((kg+gr/10)*10)/10;
   $('#weightPickVal').textContent=fmt(pickedKg);
   closePicker();
 }
@@ -799,7 +799,7 @@ $('#dateInput').max = todayISO();
 $('#dateInput').value = todayISO();
 if(goal) $('#goalInput').value = fmt(goal);
 buildWheel(wheelKg, KGMAX-KGMIN+1, i=>KGMIN+i);
-buildWheel(wheelG, 1000, i=>String(i).padStart(3,'0'));
+buildWheel(wheelG, 10, i=>String(i));
 render();
 initSync();
 </script>
