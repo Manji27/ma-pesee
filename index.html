@@ -110,6 +110,10 @@
   .backup-box{background:var(--card);border:1px solid var(--line);border-radius:13px;
     padding:14px;margin-bottom:9px;font-size:13px;color:var(--muted);line-height:1.5}
   .backup-box b{color:var(--txt)}
+  #tokenInput{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--txt);
+    font-size:15px;padding:14px;border-radius:13px;margin-bottom:9px}
+  #tokenInput:focus{outline:none;border-color:var(--accent)}
+  #saveTokenBtn{background:var(--accent)!important;color:#04293f!important;border-color:var(--accent)!important}
 </style>
 </head>
 <body>
@@ -172,8 +176,18 @@
     Tes données ne sont que sur ce téléphone. Active la sauvegarde pour les copier
     automatiquement dans un <b>Gist privé GitHub</b> (invisible des autres) et ne jamais les perdre.
   </div>
-  <button id="backupBtn"><span class="ic">☁️</span> <span id="backupBtnLabel">Activer la sauvegarde</span></button>
+
+  <!-- Étapes d'activation (visibles tant que non activé) -->
+  <div id="backupSetup">
+    <button id="genTokenBtn"><span class="ic">①</span> Créer un jeton sur GitHub</button>
+    <input id="tokenInput" type="text" inputmode="text" autocapitalize="off" autocorrect="off"
+           spellcheck="false" placeholder="② Colle le jeton ici (ghp_…)">
+    <button id="saveTokenBtn"><span class="ic">③</span> Activer la sauvegarde</button>
+  </div>
+
+  <!-- Boutons une fois activé -->
   <button id="restoreBtn"><span class="ic">🔄</span> Synchroniser maintenant</button>
+  <button id="backupBtn"><span class="ic">🔌</span> Désactiver la sauvegarde</button>
 
   <h3 style="margin-top:18px">Données &amp; export</h3>
   <button id="expCsv"><span class="ic">📄</span> Exporter en CSV</button>
@@ -424,27 +438,24 @@ function gistPayload(){
     files:{[GIST_FILE]:{content:JSON.stringify(data,null,2)}}});
 }
 
-async function activateBackup(){
-  if(token){ // déjà activé -> proposer de déconnecter
-    if(confirm('Désactiver la sauvegarde sur cet appareil ?\n(Tes données restent dans GitHub et sur ce téléphone.)')){
-      token=''; gistId=''; localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(GIST_KEY);
-      refreshBackupUI(); setSync('','non activée'); $('#syncPill').style.display='none';
-      toast('Sauvegarde désactivée');
-    }
-    return;
-  }
-  const help='1. La page GitHub va s\'ouvrir : connecte-toi puis clique « Generate token » tout en bas.\n'
-    +'2. Copie le jeton (commence par ghp_…)\n3. Reviens ici et colle-le.';
-  alert(help);
+// Étape ① : ouvrir la page GitHub de création du jeton.
+function openTokenPage(){
   window.open('https://github.com/settings/tokens/new?scopes=gist&description=Ma%20Pesee','_blank');
-  const tk=prompt('Colle ton jeton GitHub ici :');
-  if(!tk) return;
-  token=tk.trim();
+}
+
+// Étape ③ : valider le jeton collé dans le champ.
+async function submitToken(){
+  const inp=$('#tokenInput');
+  const tk=(inp.value||'').trim();
+  if(!tk){ toast('Colle d\'abord ton jeton'); inp.focus(); return; }
+  token=tk;
   setSync('sync','Connexion…');
+  toast('Connexion à GitHub…');
   try{
     const me=await api('/user');
     if(!me.ok) throw new Error('token');
     localStorage.setItem(TOKEN_KEY, token);
+    inp.value='';
     await syncFindOrCreate();
     refreshBackupUI();
     toast('Sauvegarde activée ✓');
@@ -453,6 +464,14 @@ async function activateBackup(){
     setSync('err','échec'); $('#syncPill').style.display='none';
     toast('Jeton invalide, réessaie');
   }
+}
+
+// Désactiver la sauvegarde sur cet appareil.
+function disableBackup(){
+  if(!confirm('Désactiver la sauvegarde sur cet appareil ?\n(Tes données restent dans GitHub et sur ce téléphone.)')) return;
+  token=''; gistId=''; localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(GIST_KEY);
+  refreshBackupUI(); $('#syncPill').style.display='none';
+  toast('Sauvegarde désactivée');
 }
 
 // Trouve le Gist existant (autre appareil) ou le crée. Fusionne les données.
@@ -522,8 +541,9 @@ async function pushNow(){
 
 function refreshBackupUI(){
   const on=!!token;
-  $('#backupBtnLabel').textContent = on ? 'Désactiver la sauvegarde' : 'Activer la sauvegarde';
+  $('#backupSetup').style.display = on ? 'none' : 'block';
   $('#restoreBtn').style.display = on ? 'flex' : 'none';
+  $('#backupBtn').style.display = on ? 'flex' : 'none';
   $('#backupBox').innerHTML = on
     ? 'Sauvegarde <b>active</b> ✓ — tes pesées sont copiées automatiquement dans ton Gist privé GitHub à chaque modification. Sur un autre appareil, colle le même jeton pour tout récupérer.'
     : 'Tes données ne sont que sur ce téléphone. Active la sauvegarde pour les copier automatiquement dans un <b>Gist privé GitHub</b> (invisible des autres) et ne jamais les perdre.';
@@ -551,7 +571,10 @@ $('#expJson').onclick=exportJson;
 $('#importBtn').onclick=()=>$('#fileInput').click();
 $('#fileInput').onchange=e=>{ if(e.target.files[0]) importFile(e.target.files[0]); e.target.value=''; };
 $('#clearBtn').onclick=clearAll;
-$('#backupBtn').onclick=activateBackup;
+$('#genTokenBtn').onclick=openTokenPage;
+$('#saveTokenBtn').onclick=submitToken;
+$('#tokenInput').addEventListener('keydown',e=>{ if(e.key==='Enter') submitToken(); });
+$('#backupBtn').onclick=disableBackup;
 $('#restoreBtn').onclick=async()=>{ closeSheet(); try{ await syncFindOrCreate(); toast('Synchronisé ✓'); }catch(e){ toast('Échec de synchro'); } };
 $('#ranges').querySelectorAll('button').forEach(b=>{
   b.onclick=()=>{ range=+b.dataset.r; $('#ranges').querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); renderChart(); };
