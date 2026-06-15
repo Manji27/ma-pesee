@@ -39,7 +39,13 @@
   .trend{font-size:14px;font-weight:600}
   .trend.up{color:var(--bad)} .trend.down{color:var(--good)} .trend.flat{color:var(--muted)}
 
-  .entry{display:flex;gap:10px;margin-top:18px}
+  .datepick{display:flex;align-items:center;justify-content:space-between;gap:10px;
+    margin-top:16px;color:var(--muted);font-size:13px;font-weight:600}
+  .datepick input{background:var(--bg);border:1px solid var(--line);color:var(--txt);
+    font-size:15px;font-weight:600;padding:10px 12px;border-radius:12px;
+    font-family:inherit;color-scheme:dark}
+  .datepick input:focus{outline:none;border-color:var(--accent)}
+  .entry{display:flex;gap:10px;margin-top:10px}
   .entry input{flex:1;background:var(--bg);border:1px solid var(--line);color:var(--txt);
     font-size:20px;font-weight:700;padding:14px 16px;border-radius:14px;text-align:center;width:100%}
   .entry input:focus{outline:none;border-color:var(--accent)}
@@ -135,12 +141,15 @@
     </div>
     <div class="trend flat" id="trend">Ajoute ta première pesée</div>
 
+    <label class="datepick">Pesée du
+      <input type="date" id="dateInput">
+    </label>
     <div class="entry">
-      <input id="weightInput" type="number" inputmode="decimal" step="0.001" min="0"
-             placeholder="ex : 72.450" enterkeyhint="done">
+      <input id="weightInput" type="text" inputmode="decimal" autocomplete="off"
+             placeholder="ex : 72,450" enterkeyhint="done">
       <button id="addBtn">Ajouter</button>
     </div>
-    <div class="hint">Précision au gramme (kg avec 3 décimales) · enregistré pour aujourd'hui</div>
+    <div class="hint">Précision au gramme (kg, 3 décimales) · choisis la date pour rattraper d'anciennes pesées</div>
   </section>
 
   <div class="stats" id="stats" style="display:none">
@@ -231,14 +240,16 @@ function addWeight(){
   let kg = parseFloat(raw);
   if(!raw || isNaN(kg) || kg<=0 || kg>700){ toast('Entre un poids valide'); inp.focus(); return; }
   kg = Math.round(kg*1000)/1000;          // arrondi au gramme
-  const date = todayISO();
+  const date = $('#dateInput').value || todayISO();
   const existing = data.find(e=>e.date===date);
-  if(existing) existing.kg = kg;          // remplace la pesée du jour
+  if(existing) existing.kg = kg;          // remplace la pesée de ce jour
   else data.push({date, kg});
   data.sort(byDate); save();
   inp.value=''; inp.blur();
+  $('#dateInput').value = todayISO();     // revient à aujourd'hui après l'ajout
   render();
-  toast(existing ? 'Pesée du jour mise à jour' : 'Pesée enregistrée 🎉');
+  const j = date===todayISO() ? 'aujourd\'hui' : prettyDate(date);
+  toast(existing ? 'Pesée du '+j+' mise à jour' : 'Pesée du '+j+' enregistrée 🎉');
 }
 
 function delEntry(date){
@@ -585,6 +596,8 @@ if('serviceWorker' in navigator){
   navigator.serviceWorker.register('sw.js').catch(()=>{});
 }
 
+$('#dateInput').max = todayISO();
+$('#dateInput').value = todayISO();
 render();
 initSync();
 </script>

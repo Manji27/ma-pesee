@@ -1,5 +1,5 @@
 // Service worker — cache l'app pour un fonctionnement 100% hors-ligne.
-const CACHE = "ma-pesee-v3";
+const CACHE = "ma-pesee-v4";
 const ASSETS = ["index.html", "manifest.json", "sw.js"];
 
 self.addEventListener("install", e => {
