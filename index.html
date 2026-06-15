@@ -48,9 +48,11 @@
     font-family:inherit;color-scheme:dark}
   .datepick input:focus{outline:none;border-color:var(--accent)}
   .entry{display:flex;gap:10px;margin-top:10px}
-  .entry input{flex:1;background:var(--bg);border:1px solid var(--line);color:var(--txt);
-    font-size:20px;font-weight:700;padding:14px 16px;border-radius:14px;text-align:center;width:100%}
-  .entry input:focus{outline:none;border-color:var(--accent)}
+  .weightpick{flex:1;background:var(--bg);border:1px solid var(--line);color:var(--txt);
+    font-size:24px;font-weight:800;padding:12px 16px;border-radius:14px;text-align:center;
+    display:flex;align-items:baseline;justify-content:center;gap:6px;cursor:pointer;letter-spacing:-.5px}
+  .weightpick small{font-size:14px;color:var(--muted);font-weight:600}
+  .weightpick:active{border-color:var(--accent)}
   .entry button{background:var(--accent);color:#04293f;border:none;font-weight:800;font-size:16px;
     padding:0 22px;border-radius:14px;cursor:pointer;white-space:nowrap}
   .entry button:active{transform:scale(.97)}
@@ -138,6 +140,29 @@
   .goalrow button{width:auto;margin:0;padding:0 18px;background:var(--accent);color:#04293f;
     border:none;border-radius:13px;font-weight:800;font-size:15px}
   .goalrow #goalClear{background:var(--card);border:1px solid var(--line);color:var(--muted);padding:0 15px}
+
+  /* Molette de sélection du poids */
+  .picker-sheet h3{text-align:center;font-size:15px;color:var(--txt);margin-bottom:4px}
+  .wheels{position:relative;display:flex;align-items:center;justify-content:center;gap:4px;
+    height:220px;margin:8px 0 16px}
+  .wheel{height:220px;overflow-y:scroll;scroll-snap-type:y mandatory;text-align:center;
+    -ms-overflow-style:none;scrollbar-width:none;
+    -webkit-mask-image:linear-gradient(to bottom,transparent,#000 34%,#000 66%,transparent);
+    mask-image:linear-gradient(to bottom,transparent,#000 34%,#000 66%,transparent)}
+  #wheelKg{width:96px} #wheelG{width:104px}
+  .wheel::-webkit-scrollbar{display:none}
+  .wheel .it{height:44px;line-height:44px;scroll-snap-align:center;font-size:30px;
+    font-weight:800;color:var(--muted);transition:color .12s,transform .12s}
+  .wheel .it.sel{color:var(--txt);transform:scale(1.04)}
+  .wheel .pad{height:88px}
+  .wheels .sep{font-size:34px;font-weight:800;align-self:center;padding-bottom:6px;color:var(--txt)}
+  .wheels .punit{font-size:17px;color:var(--muted);font-weight:700;align-self:center;margin-left:2px}
+  .center-band{position:absolute;left:8px;right:8px;top:88px;height:44px;pointer-events:none;
+    border-top:1px solid var(--accent);border-bottom:1px solid var(--accent);
+    background:rgba(56,189,248,.06);border-radius:8px}
+  .primary-btn{width:100%;background:var(--accent);color:#04293f;border:none;font-weight:800;
+    font-size:16px;padding:16px;border-radius:14px;cursor:pointer}
+  .primary-btn:active{transform:scale(.99)}
 </style>
 </head>
 <body>
@@ -163,11 +188,12 @@
       <input type="date" id="dateInput">
     </label>
     <div class="entry">
-      <input id="weightInput" type="text" inputmode="decimal" autocomplete="off"
-             placeholder="ex : 72,450" enterkeyhint="done">
+      <button id="weightPick" class="weightpick">
+        <span id="weightPickVal">—</span><small>kg</small>
+      </button>
       <button id="addBtn">Ajouter</button>
     </div>
-    <div class="hint">Précision au gramme (kg, 3 décimales) · choisis la date pour rattraper d'anciennes pesées</div>
+    <div class="hint">Touche le poids pour le régler à la molette (au gramme) · choisis la date pour une ancienne pesée</div>
   </section>
 
   <div class="stats" id="stats" style="display:none">
@@ -193,6 +219,21 @@
   </section>
 
   <section class="list" id="list"></section>
+</div>
+
+<!-- Sélecteur de poids (molette) -->
+<div class="overlay" id="pickOverlay"></div>
+<div class="sheet picker-sheet" id="pickSheet">
+  <div class="grip"></div>
+  <h3>Règle ton poids</h3>
+  <div class="wheels">
+    <div class="wheel" id="wheelKg"></div>
+    <div class="sep">,</div>
+    <div class="wheel" id="wheelG"></div>
+    <div class="punit">kg</div>
+    <div class="center-band"></div>
+  </div>
+  <button id="pickValidate" class="primary-btn">Valider</button>
 </div>
 
 <!-- Menu -->
@@ -263,18 +304,16 @@ function prettyDate(iso){
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2000); }
 
 /* ---------- Ajouter une pesée ---------- */
+let pickedKg = null;   // poids choisi à la molette
+
 function addWeight(){
-  const inp = $('#weightInput');
-  let raw = inp.value.trim().replace(',', '.');
-  let kg = parseFloat(raw);
-  if(!raw || isNaN(kg) || kg<=0 || kg>700){ toast('Entre un poids valide'); inp.focus(); return; }
-  kg = Math.round(kg*1000)/1000;          // arrondi au gramme
+  if(pickedKg==null){ toast('Choisis un poids'); openPicker(); return; }
+  const kg = Math.round(pickedKg*1000)/1000;
   const date = $('#dateInput').value || todayISO();
   const existing = data.find(e=>e.date===date);
   if(existing) existing.kg = kg;          // remplace la pesée de ce jour
   else data.push({date, kg});
   data.sort(byDate); save();
-  inp.value=''; inp.blur();
   $('#dateInput').value = todayISO();     // revient à aujourd'hui après l'ajout
   render();
   const j = date===todayISO() ? 'aujourd\'hui' : prettyDate(date);
@@ -456,6 +495,44 @@ function setGoal(){
 function clearGoal(){
   goal=0; localStorage.removeItem(GOAL_KEY); $('#goalInput').value='';
   renderChart(); toast('Objectif retiré');
+}
+
+/* ---------- Molette de poids ---------- */
+const KGMIN=20, KGMAX=250, IT=44;       // bornes kg + hauteur d'un cran (px)
+const wheelKg=$('#wheelKg'), wheelG=$('#wheelG');
+
+function buildWheel(el, count, fmtFn){
+  let h='<div class="pad"></div>';
+  for(let i=0;i<count;i++) h+=`<div class="it" data-i="${i}">${fmtFn(i)}</div>`;
+  h+='<div class="pad"></div>';
+  el.innerHTML=h;
+}
+function wheelIndex(el){ return Math.max(0, Math.round(el.scrollTop/IT)); }
+function setWheel(el, i){ el.scrollTop=i*IT; highlight(el); }
+function highlight(el){
+  const sel=wheelIndex(el);
+  el.querySelectorAll('.it').forEach((n,k)=>n.classList.toggle('sel', k===sel));
+}
+
+function currentPickValue(){
+  return pickedKg!=null ? pickedKg : (data.length ? data[data.length-1].kg : 70);
+}
+function openPicker(){
+  const base=currentPickValue();
+  let kg=Math.floor(base), gr=Math.round((base-kg)*1000);
+  if(gr>999){ kg+=1; gr=0; }
+  kg=Math.min(Math.max(kg,KGMIN),KGMAX);
+  $('#pickOverlay').classList.add('show'); $('#pickSheet').classList.add('show');
+  // le scroll doit être réglé après l'affichage de la feuille
+  requestAnimationFrame(()=>{ setWheel(wheelKg, kg-KGMIN); setWheel(wheelG, gr); });
+}
+function closePicker(){ $('#pickOverlay').classList.remove('show'); $('#pickSheet').classList.remove('show'); }
+function validatePick(){
+  const kg=KGMIN+wheelIndex(wheelKg);
+  const gr=wheelIndex(wheelG);
+  pickedKg=Math.round((kg+gr/1000)*1000)/1000;
+  $('#weightPickVal').textContent=fmt(pickedKg);
+  closePicker();
 }
 
 function renderList(){
@@ -681,7 +758,12 @@ function closeSheet(){ $('#overlay').classList.remove('show'); $('#sheet').class
 
 /* ---------- Events ---------- */
 $('#addBtn').onclick=addWeight;
-$('#weightInput').addEventListener('keydown',e=>{ if(e.key==='Enter') addWeight(); });
+// molette de poids
+$('#weightPick').onclick=openPicker;
+$('#pickValidate').onclick=validatePick;
+$('#pickOverlay').onclick=closePicker;
+wheelKg.addEventListener('scroll',()=>{ highlight(wheelKg); });
+wheelG.addEventListener('scroll',()=>{ highlight(wheelG); });
 $('#menuBtn').onclick=openSheet;
 $('#overlay').onclick=closeSheet;
 $('#expCsv').onclick=exportCsv;
@@ -716,6 +798,8 @@ if('serviceWorker' in navigator){
 $('#dateInput').max = todayISO();
 $('#dateInput').value = todayISO();
 if(goal) $('#goalInput').value = fmt(goal);
+buildWheel(wheelKg, KGMAX-KGMIN+1, i=>KGMIN+i);
+buildWheel(wheelG, 1000, i=>String(i).padStart(3,'0'));
 render();
 initSync();
 </script>
