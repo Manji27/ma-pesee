@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#0f172a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Ma Pesée</title>
+<link rel="manifest" href="manifest.json">
+<style>
+  :root{
+    --bg:#0f172a; --bg2:#1e293b; --card:#1e293b; --line:#334155;
+    --txt:#f1f5f9; --muted:#94a3b8; --accent:#38bdf8; --accent2:#0ea5e9;
+    --good:#34d399; --bad:#f87171; --radius:18px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--bg);color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+    display:flex;flex-direction:column;min-height:100%;
+  }
+  .wrap{max-width:560px;width:100%;margin:0 auto;padding:18px 16px 100px;flex:1}
+  header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+  h1{font-size:22px;margin:0;font-weight:700;letter-spacing:-.3px}
+  h1 span{color:var(--accent)}
+  .menu-btn{background:var(--card);border:1px solid var(--line);color:var(--txt);
+    width:42px;height:42px;border-radius:12px;font-size:18px;cursor:pointer;display:grid;place-items:center}
+
+  /* Hero / saisie */
+  .hero{background:linear-gradient(160deg,#1e293b,#0f243b);border:1px solid var(--line);
+    border-radius:var(--radius);padding:20px;margin-bottom:16px}
+  .hero .label{color:var(--muted);font-size:13px;text-transform:uppercase;letter-spacing:.5px}
+  .current{display:flex;align-items:baseline;gap:8px;margin:6px 0 4px}
+  .current .val{font-size:46px;font-weight:800;letter-spacing:-1.5px;line-height:1}
+  .current .unit{font-size:18px;color:var(--muted);font-weight:600}
+  .trend{font-size:14px;font-weight:600}
+  .trend.up{color:var(--bad)} .trend.down{color:var(--good)} .trend.flat{color:var(--muted)}
+
+  .entry{display:flex;gap:10px;margin-top:18px}
+  .entry input{flex:1;background:var(--bg);border:1px solid var(--line);color:var(--txt);
+    font-size:20px;font-weight:700;padding:14px 16px;border-radius:14px;text-align:center;width:100%}
+  .entry input:focus{outline:none;border-color:var(--accent)}
+  .entry button{background:var(--accent);color:#04293f;border:none;font-weight:800;font-size:16px;
+    padding:0 22px;border-radius:14px;cursor:pointer;white-space:nowrap}
+  .entry button:active{transform:scale(.97)}
+  .hint{color:var(--muted);font-size:12px;margin-top:10px;text-align:center}
+
+  /* Carte graphique */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    padding:16px;margin-bottom:16px}
+  .card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+  .card-head h2{font-size:15px;margin:0;font-weight:700}
+  .ranges{display:flex;gap:6px}
+  .ranges button{background:var(--bg);border:1px solid var(--line);color:var(--muted);
+    font-size:12px;font-weight:600;padding:6px 10px;border-radius:9px;cursor:pointer}
+  .ranges button.on{background:var(--accent);color:#04293f;border-color:var(--accent)}
+  #chart{width:100%;display:block;touch-action:none}
+  .empty{color:var(--muted);text-align:center;padding:40px 10px;font-size:14px}
+
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;text-align:center}
+  .stat .k{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+  .stat .v{font-size:18px;font-weight:800;margin-top:3px}
+
+  /* Historique */
+  .list{display:flex;flex-direction:column;gap:1px;background:var(--line);
+    border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+  .row{background:var(--card);display:flex;align-items:center;justify-content:space-between;padding:13px 15px}
+  .row .date{font-size:14px}
+  .row .date small{display:block;color:var(--muted);font-size:11px;margin-top:2px}
+  .row .right{display:flex;align-items:center;gap:12px}
+  .row .w{font-size:16px;font-weight:700}
+  .row .delta{font-size:12px;font-weight:600;min-width:54px;text-align:right}
+  .row .del{background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:4px}
+  .delta.up{color:var(--bad)} .delta.down{color:var(--good)} .delta.flat{color:var(--muted)}
+
+  /* Sheet menu */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;
+    transition:.2s;z-index:20}
+  .overlay.show{opacity:1;pointer-events:auto}
+  .sheet{position:fixed;left:0;right:0;bottom:0;background:var(--bg2);border-top:1px solid var(--line);
+    border-radius:22px 22px 0 0;padding:10px 16px calc(20px + env(safe-area-inset-bottom));
+    transform:translateY(100%);transition:.25s cubic-bezier(.2,.8,.2,1);z-index:21;max-width:560px;margin:0 auto}
+  .sheet.show{transform:translateY(0)}
+  .grip{width:42px;height:5px;background:var(--line);border-radius:3px;margin:6px auto 14px}
+  .sheet h3{margin:0 0 12px;font-size:14px;color:var(--muted);font-weight:600}
+  .sheet button{width:100%;background:var(--card);border:1px solid var(--line);color:var(--txt);
+    text-align:left;padding:15px;border-radius:13px;font-size:15px;font-weight:600;margin-bottom:9px;cursor:pointer;
+    display:flex;align-items:center;gap:12px}
+  .sheet button .ic{font-size:18px}
+  .sheet button.danger{color:var(--bad)}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:var(--accent);color:#04293f;font-weight:700;padding:12px 20px;border-radius:30px;
+    opacity:0;pointer-events:none;transition:.25s;z-index:30;font-size:14px}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Ma <span>Pesée</span></h1>
+    <button class="menu-btn" id="menuBtn" aria-label="Menu">⋯</button>
+  </header>
+
+  <section class="hero">
+    <div class="label">Poids actuel</div>
+    <div class="current">
+      <span class="val" id="curVal">—</span>
+      <span class="unit">kg</span>
+    </div>
+    <div class="trend flat" id="trend">Ajoute ta première pesée</div>
+
+    <div class="entry">
+      <input id="weightInput" type="number" inputmode="decimal" step="0.001" min="0"
+             placeholder="ex : 72.450" enterkeyhint="done">
+      <button id="addBtn">Ajouter</button>
+    </div>
+    <div class="hint">Précision au gramme (kg avec 3 décimales) · enregistré pour aujourd'hui</div>
+  </section>
+
+  <div class="stats" id="stats" style="display:none">
+    <div class="stat"><div class="k">Min</div><div class="v" id="sMin">—</div></div>
+    <div class="stat"><div class="k">Moy. 7j</div><div class="v" id="sAvg">—</div></div>
+    <div class="stat"><div class="k">Max</div><div class="v" id="sMax">—</div></div>
+  </div>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Évolution</h2>
+      <div class="ranges" id="ranges">
+        <button data-r="30">30j</button>
+        <button data-r="90" class="on">90j</button>
+        <button data-r="365">1an</button>
+        <button data-r="0">Tout</button>
+      </div>
+    </div>
+    <svg id="chart" viewBox="0 0 600 280" preserveAspectRatio="none"></svg>
+    <div class="empty" id="chartEmpty">Pas encore assez de données pour le graphique.</div>
+  </section>
+
+  <section class="list" id="list"></section>
+</div>
+
+<!-- Menu -->
+<div class="overlay" id="overlay"></div>
+<div class="sheet" id="sheet">
+  <div class="grip"></div>
+  <h3>Données &amp; export</h3>
+  <button id="expCsv"><span class="ic">📄</span> Exporter en CSV</button>
+  <button id="expJson"><span class="ic">🗂️</span> Exporter en JSON</button>
+  <button id="importBtn"><span class="ic">📥</span> Importer un fichier</button>
+  <button id="clearBtn" class="danger"><span class="ic">🗑️</span> Tout effacer</button>
+  <input type="file" id="fileInput" accept=".json,.csv" style="display:none">
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+const KEY = "maPesee.v1";
+const $ = s => document.querySelector(s);
+let data = load();          // [{date:"YYYY-MM-DD", kg:Number}]
+let range = 90;
+
+/* ---------- Stockage ---------- */
+function load(){
+  try{ const d = JSON.parse(localStorage.getItem(KEY)) || []; return d.sort(byDate); }
+  catch(e){ return []; }
+}
+function save(){ localStorage.setItem(KEY, JSON.stringify(data)); }
+function byDate(a,b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }
+
+/* ---------- Helpers ---------- */
+function todayISO(){ const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10); }
+function fmt(kg){ return kg.toLocaleString('fr-FR',{minimumFractionDigits:3,maximumFractionDigits:3}); }
+function fmtDelta(g){ const s=g>0?'+':''; return s+(g/1000).toLocaleString('fr-FR',{minimumFractionDigits:3,maximumFractionDigits:3})+' kg'; }
+function prettyDate(iso){
+  const [y,m,d]=iso.split('-');
+  const dt=new Date(+y,+m-1,+d);
+  return dt.toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'short'});
+}
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2000); }
+
+/* ---------- Ajouter une pesée ---------- */
+function addWeight(){
+  const inp = $('#weightInput');
+  let raw = inp.value.trim().replace(',', '.');
+  let kg = parseFloat(raw);
+  if(!raw || isNaN(kg) || kg<=0 || kg>700){ toast('Entre un poids valide'); inp.focus(); return; }
+  kg = Math.round(kg*1000)/1000;          // arrondi au gramme
+  const date = todayISO();
+  const existing = data.find(e=>e.date===date);
+  if(existing) existing.kg = kg;          // remplace la pesée du jour
+  else data.push({date, kg});
+  data.sort(byDate); save();
+  inp.value=''; inp.blur();
+  render();
+  toast(existing ? 'Pesée du jour mise à jour' : 'Pesée enregistrée 🎉');
+}
+
+function delEntry(date){
+  if(!confirm('Supprimer la pesée du '+prettyDate(date)+' ?')) return;
+  data = data.filter(e=>e.date!==date); save(); render(); toast('Supprimée');
+}
+
+/* ---------- Rendu ---------- */
+function render(){
+  renderHero();
+  renderStats();
+  renderChart();
+  renderList();
+}
+
+function renderHero(){
+  if(!data.length){
+    $('#curVal').textContent='—';
+    $('#trend').className='trend flat'; $('#trend').textContent='Ajoute ta première pesée';
+    return;
+  }
+  const last = data[data.length-1];
+  $('#curVal').textContent = fmt(last.kg);
+  if(data.length>1){
+    const prev = data[data.length-2];
+    const g = Math.round((last.kg-prev.kg)*1000);
+    const el = $('#trend');
+    if(g>0){ el.className='trend up'; el.textContent='▲ '+fmtDelta(g)+' vs '+prettyDate(prev.date); }
+    else if(g<0){ el.className='trend down'; el.textContent='▼ '+fmtDelta(g)+' vs '+prettyDate(prev.date); }
+    else { el.className='trend flat'; el.textContent='= stable vs '+prettyDate(prev.date); }
+  } else {
+    $('#trend').className='trend flat'; $('#trend').textContent='Première pesée enregistrée';
+  }
+}
+
+function renderStats(){
+  const box=$('#stats');
+  if(data.length<2){ box.style.display='none'; return; }
+  box.style.display='grid';
+  const kgs=data.map(e=>e.kg);
+  const min=Math.min(...kgs), max=Math.max(...kgs);
+  const last7=data.slice(-7);
+  const avg=last7.reduce((a,e)=>a+e.kg,0)/last7.length;
+  $('#sMin').textContent=fmt(min); $('#sMax').textContent=fmt(max); $('#sAvg').textContent=fmt(avg);
+}
+
+function filtered(){
+  if(!range) return data.slice();
+  const cut=new Date(); cut.setDate(cut.getDate()-range);
+  const cutISO=cut.toISOString().slice(0,10);
+  return data.filter(e=>e.date>=cutISO);
+}
+
+function renderChart(){
+  const svg=$('#chart'), empty=$('#chartEmpty');
+  const pts=filtered();
+  if(pts.length<2){ svg.style.display='none'; empty.style.display='block'; return; }
+  svg.style.display='block'; empty.style.display='none';
+
+  const W=600,H=280,pad={t:20,r:14,b:26,l:46};
+  const iw=W-pad.l-pad.r, ih=H-pad.t-pad.b;
+  const kgs=pts.map(p=>p.kg);
+  let min=Math.min(...kgs), max=Math.max(...kgs);
+  if(min===max){ min-=0.5; max+=0.5; }
+  const padV=(max-min)*0.15; min-=padV; max+=padV;
+  const t0=new Date(pts[0].date).getTime();
+  const t1=new Date(pts[pts.length-1].date).getTime();
+  const span=Math.max(1,t1-t0);
+  const X=iso=>pad.l+((new Date(iso).getTime()-t0)/span)*iw;
+  const Y=kg=>pad.t+(1-(kg-min)/(max-min))*ih;
+
+  let g='';
+  // grille + labels Y (3 lignes)
+  for(let i=0;i<=3;i++){
+    const v=min+(max-min)*i/3, y=Y(v);
+    g+=`<line x1="${pad.l}" y1="${y}" x2="${W-pad.r}" y2="${y}" stroke="#334155" stroke-width="1"/>`;
+    g+=`<text x="${pad.l-6}" y="${y+4}" fill="#94a3b8" font-size="11" text-anchor="end">${v.toFixed(1)}</text>`;
+  }
+  // labels X (début / milieu / fin)
+  [0, Math.floor(pts.length/2), pts.length-1].forEach((idx,i)=>{
+    const p=pts[idx], x=X(p.date);
+    const anchor=i===0?'start':i===2?'end':'middle';
+    g+=`<text x="${x}" y="${H-8}" fill="#94a3b8" font-size="11" text-anchor="${anchor}">${shortDate(p.date)}</text>`;
+  });
+  // aire + ligne
+  const line=pts.map((p,i)=>(i?'L':'M')+X(p.date).toFixed(1)+' '+Y(p.kg).toFixed(1)).join(' ');
+  const area=`M${X(pts[0].date).toFixed(1)} ${(H-pad.b)} `+pts.map(p=>'L'+X(p.date).toFixed(1)+' '+Y(p.kg).toFixed(1)).join(' ')+` L${X(pts[pts.length-1].date).toFixed(1)} ${(H-pad.b)} Z`;
+  g+=`<defs><linearGradient id="ag" x1="0" y1="0" x2="0" y2="1">
+       <stop offset="0" stop-color="#38bdf8" stop-opacity=".35"/>
+       <stop offset="1" stop-color="#38bdf8" stop-opacity="0"/></linearGradient></defs>`;
+  g+=`<path d="${area}" fill="url(#ag)"/>`;
+  g+=`<path d="${line}" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+  // points (seulement si peu nombreux)
+  if(pts.length<=40) pts.forEach(p=>{ g+=`<circle cx="${X(p.date).toFixed(1)}" cy="${Y(p.kg).toFixed(1)}" r="3" fill="#0f172a" stroke="#38bdf8" stroke-width="2"/>`; });
+  // dernier point en évidence
+  const lp=pts[pts.length-1];
+  g+=`<circle cx="${X(lp.date).toFixed(1)}" cy="${Y(lp.kg).toFixed(1)}" r="5" fill="#38bdf8"/>`;
+  svg.innerHTML=g;
+}
+function shortDate(iso){ const [,m,d]=iso.split('-'); return d+'/'+m; }
+
+function renderList(){
+  const list=$('#list');
+  if(!data.length){ list.innerHTML='<div class="row"><span class="date" style="color:var(--muted)">Aucune pesée pour l\'instant</span></div>'; return; }
+  let html='';
+  for(let i=data.length-1;i>=0;i--){
+    const e=data[i];
+    let delta='';
+    if(i>0){
+      const g=Math.round((e.kg-data[i-1].kg)*1000);
+      const cls=g>0?'up':g<0?'down':'flat';
+      const sym=g>0?'▲':g<0?'▼':'=';
+      delta=`<span class="delta ${cls}">${sym} ${Math.abs(g)} g</span>`;
+    } else delta=`<span class="delta flat">—</span>`;
+    html+=`<div class="row">
+      <div class="date">${prettyDate(e.date)}<small>${e.date}</small></div>
+      <div class="right">${delta}<span class="w">${fmt(e.kg)} kg</span>
+      <button class="del" data-date="${e.date}" aria-label="Supprimer">✕</button></div>
+    </div>`;
+  }
+  list.innerHTML=html;
+  list.querySelectorAll('.del').forEach(b=>b.onclick=()=>delEntry(b.dataset.date));
+}
+
+/* ---------- Export / Import ---------- */
+function download(filename, content, type){
+  const blob=new Blob([content],{type});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=filename; document.body.appendChild(a); a.click();
+  a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function exportCsv(){
+  if(!data.length) return toast('Aucune donnée à exporter');
+  let csv='date,poids_kg,poids_g\n';
+  data.forEach(e=>{ csv+=`${e.date},${e.kg.toFixed(3)},${Math.round(e.kg*1000)}\n`; });
+  download('ma-pesee-'+todayISO()+'.csv', csv, 'text/csv');
+  toast('CSV exporté'); closeSheet();
+}
+function exportJson(){
+  if(!data.length) return toast('Aucune donnée à exporter');
+  download('ma-pesee-'+todayISO()+'.json', JSON.stringify(data,null,2), 'application/json');
+  toast('JSON exporté'); closeSheet();
+}
+function importFile(file){
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      let imported=[];
+      const txt=reader.result.trim();
+      if(file.name.endsWith('.json')){
+        imported=JSON.parse(txt);
+      } else { // CSV
+        txt.split(/\r?\n/).slice(1).forEach(line=>{
+          if(!line.trim()) return;
+          const [date,kg]=line.split(',');
+          if(date&&kg) imported.push({date:date.trim(), kg:parseFloat(kg)});
+        });
+      }
+      // fusion : la date importée remplace l'existante
+      const map=new Map(data.map(e=>[e.date,e.kg]));
+      imported.forEach(e=>{ if(e.date && !isNaN(e.kg)) map.set(e.date, Math.round(e.kg*1000)/1000); });
+      data=[...map].map(([date,kg])=>({date,kg})).sort(byDate);
+      save(); render(); toast(imported.length+' pesées importées'); closeSheet();
+    }catch(err){ toast('Fichier illisible'); }
+  };
+  reader.readAsText(file);
+}
+function clearAll(){
+  if(!confirm('Effacer TOUTES les pesées ? Cette action est définitive.')) return;
+  data=[]; save(); render(); toast('Tout effacé'); closeSheet();
+}
+
+/* ---------- Menu sheet ---------- */
+function openSheet(){ $('#overlay').classList.add('show'); $('#sheet').classList.add('show'); }
+function closeSheet(){ $('#overlay').classList.remove('show'); $('#sheet').classList.remove('show'); }
+
+/* ---------- Events ---------- */
+$('#addBtn').onclick=addWeight;
+$('#weightInput').addEventListener('keydown',e=>{ if(e.key==='Enter') addWeight(); });
+$('#menuBtn').onclick=openSheet;
+$('#overlay').onclick=closeSheet;
+$('#expCsv').onclick=exportCsv;
+$('#expJson').onclick=exportJson;
+$('#importBtn').onclick=()=>$('#fileInput').click();
+$('#fileInput').onchange=e=>{ if(e.target.files[0]) importFile(e.target.files[0]); e.target.value=''; };
+$('#clearBtn').onclick=clearAll;
+$('#ranges').querySelectorAll('button').forEach(b=>{
+  b.onclick=()=>{ range=+b.dataset.r; $('#ranges').querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); renderChart(); };
+});
+
+/* ---------- PWA service worker ---------- */
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').catch(()=>{});
+}
+
+render();
+</script>
+</body>
+</html>
