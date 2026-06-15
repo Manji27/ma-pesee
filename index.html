@@ -125,9 +125,11 @@
     padding:9px 18px;border-radius:22px;font-size:14px;cursor:pointer;white-space:nowrap}
 
   /* Sauvegarde */
+  .toprow{display:flex;align-items:center;gap:10px;margin:-6px 0 16px}
+  .ver{font-size:11px;color:var(--muted);font-weight:600;margin-left:auto}
   .sync-pill{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;
     color:var(--muted);background:var(--card);border:1px solid var(--line);
-    padding:7px 12px;border-radius:30px;margin:-6px 0 16px;width:fit-content}
+    padding:7px 12px;border-radius:30px;width:fit-content}
   .sync-pill .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none}
   .sync-pill.ok .dot{background:var(--good)} .sync-pill.ok{color:var(--good)}
   .sync-pill.sync .dot{background:var(--accent);animation:pulse 1s infinite}
@@ -179,8 +181,11 @@
     <button class="menu-btn" id="menuBtn" aria-label="Menu">⋯</button>
   </header>
 
-  <div class="sync-pill" id="syncPill" style="display:none">
-    <span class="dot"></span><span id="syncText">Sauvegarde non activée</span>
+  <div class="toprow">
+    <div class="sync-pill" id="syncPill" style="display:none">
+      <span class="dot"></span><span id="syncText">Sauvegarde non activée</span>
+    </div>
+    <span class="ver">v13</span>
   </div>
 
   <section class="hero">
@@ -283,7 +288,6 @@
   <button id="importBtn"><span class="ic">📥</span> Importer un fichier</button>
   <button id="clearBtn" class="danger"><span class="ic">🗑️</span> Tout effacer</button>
   <input type="file" id="fileInput" accept=".json,.csv" style="display:none">
-  <div style="text-align:center;color:var(--muted);font-size:11px;margin-top:10px">Ma Pesée · v12</div>
 </div>
 <div class="toast" id="toast"></div>
 <div class="snack" id="undoBar"><span id="undoMsg"></span><button id="undoBtn">Annuler</button></div>
