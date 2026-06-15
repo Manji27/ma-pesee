@@ -125,11 +125,11 @@
     padding:9px 18px;border-radius:22px;font-size:14px;cursor:pointer;white-space:nowrap}
 
   /* Sauvegarde */
-  .toprow{display:flex;align-items:center;gap:10px;margin:-6px 0 16px}
-  .ver{font-size:11px;color:var(--muted);font-weight:600;margin-left:auto}
+  .brand{display:flex;align-items:baseline;gap:10px}
+  .ver{font-size:11px;color:var(--muted);font-weight:600}
   .sync-pill{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;
     color:var(--muted);background:var(--card);border:1px solid var(--line);
-    padding:7px 12px;border-radius:30px;width:fit-content}
+    padding:7px 12px;border-radius:30px;width:fit-content;margin:-6px 0 16px}
   .sync-pill .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none}
   .sync-pill.ok .dot{background:var(--good)} .sync-pill.ok{color:var(--good)}
   .sync-pill.sync .dot{background:var(--accent);animation:pulse 1s infinite}
@@ -177,15 +177,15 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>Ma <span>Pesée</span></h1>
+    <div class="brand">
+      <h1>Ma <span>Pesée</span></h1>
+      <span class="ver">v14</span>
+    </div>
     <button class="menu-btn" id="menuBtn" aria-label="Menu">⋯</button>
   </header>
 
-  <div class="toprow">
-    <div class="sync-pill" id="syncPill" style="display:none">
-      <span class="dot"></span><span id="syncText">Sauvegarde non activée</span>
-    </div>
-    <span class="ver">v13</span>
+  <div class="sync-pill" id="syncPill" style="display:none">
+    <span class="dot"></span><span id="syncText">Sauvegarde non activée</span>
   </div>
 
   <section class="hero">
