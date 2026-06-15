@@ -8,6 +8,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Ma Pesée</title>
 <link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-192.png">
 <style>
   :root{
     --bg:#0f172a; --bg2:#1e293b; --card:#1e293b; --line:#334155;
@@ -63,7 +65,16 @@
   .ranges button{background:var(--bg);border:1px solid var(--line);color:var(--muted);
     font-size:12px;font-weight:600;padding:6px 10px;border-radius:9px;cursor:pointer}
   .ranges button.on{background:var(--accent);color:#04293f;border-color:var(--accent)}
+  #chartCard{position:relative}
   #chart{width:100%;display:block;touch-action:none}
+  .tip{position:absolute;pointer-events:none;background:#0b1220;border:1px solid var(--accent);
+    color:var(--txt);font-size:12px;font-weight:600;padding:7px 10px;border-radius:10px;
+    opacity:0;transform:translate(-50%,-8px);transition:opacity .12s;white-space:nowrap;z-index:5;line-height:1.35}
+  .tip.show{opacity:1}
+  .tip small{color:var(--muted);font-weight:500}
+  .legend{display:flex;gap:16px;justify-content:center;margin-top:6px;font-size:11px;color:var(--muted)}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .legend i{width:14px;height:0;border-top-width:3px;border-top-style:solid;border-radius:2px}
   .empty{color:var(--muted);text-align:center;padding:40px 10px;font-size:14px}
 
   .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
@@ -120,6 +131,13 @@
     font-size:15px;padding:14px;border-radius:13px;margin-bottom:9px}
   #tokenInput:focus{outline:none;border-color:var(--accent)}
   #saveTokenBtn{background:var(--accent)!important;color:#04293f!important;border-color:var(--accent)!important}
+  .goalrow{display:flex;gap:9px;margin-bottom:9px}
+  .goalrow input{flex:1;background:var(--bg);border:1px solid var(--line);color:var(--txt);
+    font-size:15px;font-weight:600;padding:14px;border-radius:13px;min-width:0}
+  .goalrow input:focus{outline:none;border-color:var(--accent)}
+  .goalrow button{width:auto;margin:0;padding:0 18px;background:var(--accent);color:#04293f;
+    border:none;border-radius:13px;font-weight:800;font-size:15px}
+  .goalrow #goalClear{background:var(--card);border:1px solid var(--line);color:var(--muted);padding:0 15px}
 </style>
 </head>
 <body>
@@ -158,7 +176,7 @@
     <div class="stat"><div class="k">Max</div><div class="v" id="sMax">—</div></div>
   </div>
 
-  <section class="card">
+  <section class="card" id="chartCard">
     <div class="card-head">
       <h2>Évolution</h2>
       <div class="ranges" id="ranges">
@@ -169,6 +187,8 @@
       </div>
     </div>
     <svg id="chart" viewBox="0 0 600 280" preserveAspectRatio="none"></svg>
+    <div class="tip" id="chartTip"></div>
+    <div class="legend" id="legend"></div>
     <div class="empty" id="chartEmpty">Pas encore assez de données pour le graphique.</div>
   </section>
 
@@ -198,6 +218,13 @@
   <button id="restoreBtn"><span class="ic">🔄</span> Synchroniser maintenant</button>
   <button id="backupBtn"><span class="ic">🔌</span> Désactiver la sauvegarde</button>
 
+  <h3 style="margin-top:18px">Objectif de poids</h3>
+  <div class="goalrow">
+    <input id="goalInput" type="text" inputmode="decimal" autocomplete="off" placeholder="ex : 70,000">
+    <button id="goalSave">OK</button>
+    <button id="goalClear" title="Retirer l'objectif">✕</button>
+  </div>
+
   <h3 style="margin-top:18px">Données &amp; export</h3>
   <button id="expCsv"><span class="ic">📄</span> Exporter en CSV</button>
   <button id="expJson"><span class="ic">🗂️</span> Exporter en JSON</button>
@@ -213,6 +240,8 @@ const KEY = "maPesee.v1";
 const $ = s => document.querySelector(s);
 let data = load();          // [{date:"YYYY-MM-DD", kg:Number}]
 let range = 90;
+const GOAL_KEY = "maPesee.goal";
+let goal = parseFloat(localStorage.getItem(GOAL_KEY)) || 0;
 
 /* ---------- Stockage ---------- */
 function load(){
@@ -303,16 +332,27 @@ function filtered(){
   return data.filter(e=>e.date>=cutISO);
 }
 
+let chartState=null;   // géométrie mémorisée pour l'interactivité (toucher)
+
+function movingAvg(pts, win){
+  return pts.map((p,i)=>{
+    const a=pts.slice(Math.max(0,i-win+1), i+1);
+    return a.reduce((s,e)=>s+e.kg,0)/a.length;
+  });
+}
+
 function renderChart(){
   const svg=$('#chart'), empty=$('#chartEmpty');
   const pts=filtered();
-  if(pts.length<2){ svg.style.display='none'; empty.style.display='block'; return; }
+  if(pts.length<2){ svg.style.display='none'; empty.style.display='block'; $('#legend').style.display='none'; chartState=null; return; }
   svg.style.display='block'; empty.style.display='none';
 
   const W=600,H=280,pad={t:20,r:14,b:26,l:46};
   const iw=W-pad.l-pad.r, ih=H-pad.t-pad.b;
   const kgs=pts.map(p=>p.kg);
+  const ma=movingAvg(pts, 7);
   let min=Math.min(...kgs), max=Math.max(...kgs);
+  if(goal && goal>=min-5 && goal<=max+5){ min=Math.min(min,goal); max=Math.max(max,goal); } // objectif visible
   if(min===max){ min-=0.5; max+=0.5; }
   const padV=(max-min)*0.15; min-=padV; max+=padV;
   const t0=new Date(pts[0].date).getTime();
@@ -334,7 +374,13 @@ function renderChart(){
     const anchor=i===0?'start':i===2?'end':'middle';
     g+=`<text x="${x}" y="${H-8}" fill="#94a3b8" font-size="11" text-anchor="${anchor}">${shortDate(p.date)}</text>`;
   });
-  // aire + ligne
+  // ligne d'objectif
+  if(goal && goal>=min && goal<=max){
+    const gy=Y(goal);
+    g+=`<line x1="${pad.l}" y1="${gy}" x2="${W-pad.r}" y2="${gy}" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="5 4"/>`;
+    g+=`<text x="${W-pad.r}" y="${gy-5}" fill="#fbbf24" font-size="11" font-weight="700" text-anchor="end">Objectif ${goal.toFixed(1)}</text>`;
+  }
+  // aire + ligne (poids réel)
   const line=pts.map((p,i)=>(i?'L':'M')+X(p.date).toFixed(1)+' '+Y(p.kg).toFixed(1)).join(' ');
   const area=`M${X(pts[0].date).toFixed(1)} ${(H-pad.b)} `+pts.map(p=>'L'+X(p.date).toFixed(1)+' '+Y(p.kg).toFixed(1)).join(' ')+` L${X(pts[pts.length-1].date).toFixed(1)} ${(H-pad.b)} Z`;
   g+=`<defs><linearGradient id="ag" x1="0" y1="0" x2="0" y2="1">
@@ -342,14 +388,75 @@ function renderChart(){
        <stop offset="1" stop-color="#38bdf8" stop-opacity="0"/></linearGradient></defs>`;
   g+=`<path d="${area}" fill="url(#ag)"/>`;
   g+=`<path d="${line}" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+  // courbe de tendance lissée (moyenne mobile 7)
+  if(pts.length>=4){
+    const maLine=pts.map((p,i)=>(i?'L':'M')+X(p.date).toFixed(1)+' '+Y(ma[i]).toFixed(1)).join(' ');
+    g+=`<path d="${maLine}" fill="none" stroke="#f97316" stroke-width="2" stroke-dasharray="2 3" stroke-linejoin="round" stroke-linecap="round" opacity=".9"/>`;
+  }
   // points (seulement si peu nombreux)
   if(pts.length<=40) pts.forEach(p=>{ g+=`<circle cx="${X(p.date).toFixed(1)}" cy="${Y(p.kg).toFixed(1)}" r="3" fill="#0f172a" stroke="#38bdf8" stroke-width="2"/>`; });
   // dernier point en évidence
   const lp=pts[pts.length-1];
   g+=`<circle cx="${X(lp.date).toFixed(1)}" cy="${Y(lp.kg).toFixed(1)}" r="5" fill="#38bdf8"/>`;
+  // marqueur interactif (caché par défaut)
+  g+=`<line id="cMark" x1="0" y1="${pad.t}" x2="0" y2="${H-pad.b}" stroke="#e2e8f0" stroke-width="1" opacity="0"/>`;
+  g+=`<circle id="cDot" r="5.5" fill="#e2e8f0" opacity="0"/>`;
   svg.innerHTML=g;
+
+  // mémorise la géométrie pour le toucher
+  chartState={ pts, X:pts.map(p=>X(p.date)), Yv:pts.map(p=>Y(p.kg)), W, padT:pad.t, padB:H-pad.b };
+
+  // légende
+  const leg=$('#legend'); leg.style.display='flex';
+  leg.innerHTML=`<span><i style="border-color:#38bdf8"></i>Poids</span>`
+    + (pts.length>=4?`<span><i style="border-color:#f97316;border-top-style:dashed"></i>Tendance</span>`:'')
+    + (goal&&goal>=min&&goal<=max?`<span><i style="border-color:#fbbf24;border-top-style:dashed"></i>Objectif</span>`:'');
+}
+
+// Infobulle au toucher / clic sur le graphique
+function chartHover(clientX){
+  if(!chartState) return;
+  const svg=$('#chart'), tip=$('#chartTip');
+  const rect=svg.getBoundingClientRect();
+  const fx=(clientX-rect.left)/rect.width;          // 0..1
+  const targetX=fx*chartState.W;                    // en unités viewBox
+  // point le plus proche
+  let best=0, bd=Infinity;
+  chartState.X.forEach((x,i)=>{ const d=Math.abs(x-targetX); if(d<bd){ bd=d; best=i; } });
+  const p=chartState.pts[best];
+  const px=chartState.X[best]/chartState.W*rect.width;
+  const py=chartState.Yv[best]/280*rect.height;
+  // déplace le marqueur SVG
+  const mark=$('#cMark'), dot=$('#cDot');
+  if(mark){ mark.setAttribute('x1',chartState.X[best]); mark.setAttribute('x2',chartState.X[best]); mark.setAttribute('opacity','.5'); }
+  if(dot){ dot.setAttribute('cx',chartState.X[best]); dot.setAttribute('cy',chartState.Yv[best]); dot.setAttribute('opacity','1'); }
+  // infobulle (en px, dans la carte)
+  tip.innerHTML=`${fmt(p.kg)} kg<br><small>${prettyDate(p.date)}</small>`;
+  tip.classList.add('show');
+  const tw=tip.offsetWidth, cardW=svg.parentElement.clientWidth;
+  let left=px; left=Math.max(tw/2+4, Math.min(cardW-tw/2-4, left));
+  tip.style.left=left+'px';
+  tip.style.top=Math.max(2, py-46)+'px';
+}
+function chartHide(){
+  const tip=$('#chartTip'); if(tip) tip.classList.remove('show');
+  const mark=$('#cMark'), dot=$('#cDot');
+  if(mark) mark.setAttribute('opacity','0');
+  if(dot) dot.setAttribute('opacity','0');
 }
 function shortDate(iso){ const [,m,d]=iso.split('-'); return d+'/'+m; }
+
+/* ---------- Objectif ---------- */
+function setGoal(){
+  const v=parseFloat(($('#goalInput').value||'').trim().replace(',','.'));
+  if(!v || isNaN(v) || v<=0 || v>700){ toast('Entre un objectif valide'); return; }
+  goal=Math.round(v*1000)/1000; localStorage.setItem(GOAL_KEY, goal);
+  renderChart(); toast('Objectif fixé à '+fmt(goal)+' kg');
+}
+function clearGoal(){
+  goal=0; localStorage.removeItem(GOAL_KEY); $('#goalInput').value='';
+  renderChart(); toast('Objectif retiré');
+}
 
 function renderList(){
   const list=$('#list');
@@ -587,6 +694,16 @@ $('#saveTokenBtn').onclick=submitToken;
 $('#tokenInput').addEventListener('keydown',e=>{ if(e.key==='Enter') submitToken(); });
 $('#backupBtn').onclick=disableBackup;
 $('#restoreBtn').onclick=async()=>{ closeSheet(); try{ await syncFindOrCreate(); toast('Synchronisé ✓'); }catch(e){ toast('Échec de synchro'); } };
+$('#goalSave').onclick=setGoal;
+$('#goalInput').addEventListener('keydown',e=>{ if(e.key==='Enter') setGoal(); });
+$('#goalClear').onclick=clearGoal;
+// interactivité graphique (toucher / survol)
+const chartEl=$('#chart');
+chartEl.addEventListener('pointerdown',e=>chartHover(e.clientX));
+chartEl.addEventListener('pointermove',e=>chartHover(e.clientX));
+chartEl.addEventListener('pointerup',chartHide);
+chartEl.addEventListener('pointercancel',chartHide);
+chartEl.addEventListener('pointerleave',chartHide);
 $('#ranges').querySelectorAll('button').forEach(b=>{
   b.onclick=()=>{ range=+b.dataset.r; $('#ranges').querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); renderChart(); };
 });
@@ -598,6 +715,7 @@ if('serviceWorker' in navigator){
 
 $('#dateInput').max = todayISO();
 $('#dateInput').value = todayISO();
+if(goal) $('#goalInput').value = fmt(goal);
 render();
 initSync();
 </script>

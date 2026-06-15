@@ -1,6 +1,7 @@
 // Service worker — cache l'app pour un fonctionnement 100% hors-ligne.
-const CACHE = "ma-pesee-v4";
-const ASSETS = ["index.html", "manifest.json", "sw.js"];
+const CACHE = "ma-pesee-v5";
+const ASSETS = ["index.html", "manifest.json", "sw.js",
+  "icon-180.png", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
