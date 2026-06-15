@@ -1,5 +1,5 @@
 // Service worker — cache l'app pour un fonctionnement 100% hors-ligne.
-const CACHE = "ma-pesee-v8";
+const CACHE = "ma-pesee-v9";
 const ASSETS = ["index.html", "manifest.json", "sw.js",
   "icon-180.png", "icon-192.png", "icon-512.png"];
 

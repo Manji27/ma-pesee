@@ -116,6 +116,13 @@
     background:var(--accent);color:#04293f;font-weight:700;padding:12px 20px;border-radius:30px;
     opacity:0;pointer-events:none;transition:.25s;z-index:30;font-size:14px}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .snack{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:var(--bg2);border:1px solid var(--line);color:var(--txt);font-weight:600;
+    padding:8px 8px 8px 18px;border-radius:30px;opacity:0;pointer-events:none;transition:.25s;
+    z-index:31;font-size:14px;display:flex;align-items:center;gap:14px;max-width:92vw}
+  .snack.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
+  .snack button{background:var(--accent);color:#04293f;border:none;font-weight:800;
+    padding:9px 18px;border-radius:22px;font-size:14px;cursor:pointer;white-space:nowrap}
 
   /* Sauvegarde */
   .sync-pill{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;
@@ -278,6 +285,7 @@
   <input type="file" id="fileInput" accept=".json,.csv" style="display:none">
 </div>
 <div class="toast" id="toast"></div>
+<div class="snack" id="undoBar"><span id="undoMsg"></span><button id="undoBtn">Annuler</button></div>
 
 <script>
 "use strict";
@@ -345,6 +353,8 @@ function prettyDate(iso){
   return dt.toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'short'});
 }
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2000); }
+function esc(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function dayNum(iso){ const [y,m,d]=iso.split('-').map(Number); return Math.floor(Date.UTC(y,m-1,d)/86400000); }
 
 /* ---------- Ajouter une pesée ---------- */
 let pickedKg = null;   // poids choisi à la molette
@@ -363,10 +373,25 @@ function addWeight(){
   toast(existing ? 'Pesée du '+j+' mise à jour' : 'Pesée du '+j+' enregistrée 🎉');
 }
 
+let pendingUndo=null;
 function delEntry(date){
-  if(!confirm('Supprimer la pesée du '+prettyDate(date)+' ?')) return;
-  data = data.filter(e=>e.date!==date); save(); render(); toast('Supprimée');
+  const entry=data.find(e=>e.date===date);
+  if(!entry) return;
+  pendingUndo={date:entry.date, kg:entry.kg};
+  data=data.filter(e=>e.date!==date); save(); render();
+  showUndo('Pesée du '+prettyDate(date)+' supprimée');
 }
+function undoDelete(){
+  if(!pendingUndo) return;
+  if(!data.some(e=>e.date===pendingUndo.date)){ data.push(pendingUndo); data.sort(byDate); save(); render(); }
+  pendingUndo=null; hideUndo(); toast('Suppression annulée');
+}
+function showUndo(msg){
+  const bar=$('#undoBar'); $('#undoMsg').textContent=msg;
+  bar.classList.add('show'); clearTimeout(bar._t);
+  bar._t=setTimeout(()=>{ bar.classList.remove('show'); pendingUndo=null; }, 5000);
+}
+function hideUndo(){ const bar=$('#undoBar'); bar.classList.remove('show'); clearTimeout(bar._t); }
 
 /* ---------- Rendu ---------- */
 function render(){
@@ -402,7 +427,8 @@ function renderStats(){
   box.style.display='grid';
   const kgs=data.map(e=>e.kg);
   const min=Math.min(...kgs), max=Math.max(...kgs);
-  const last7=data.slice(-7);
+  const lo=dayNum(data[data.length-1].date)-6;     // 7 jours calendaires
+  const last7=data.filter(e=>dayNum(e.date)>=lo);
   const avg=last7.reduce((a,e)=>a+e.kg,0)/last7.length;
   $('#sMin').textContent=fmt(min); $('#sMax').textContent=fmt(max); $('#sAvg').textContent=fmt(avg);
 }
@@ -416,10 +442,13 @@ function filtered(){
 
 let chartState=null;   // géométrie mémorisée pour l'interactivité (toucher)
 
-function movingAvg(pts, win){
+// Moyenne mobile sur une fenêtre de `days` jours CALENDAIRES (et non de N mesures).
+function movingAvg(pts, days){
   return pts.map((p,i)=>{
-    const a=pts.slice(Math.max(0,i-win+1), i+1);
-    return a.reduce((s,e)=>s+e.kg,0)/a.length;
+    const lo=dayNum(p.date)-(days-1);
+    let s=0,n=0;
+    for(let j=i;j>=0;j--){ if(dayNum(pts[j].date)<lo) break; s+=pts[j].kg; n++; }
+    return s/n;
   });
 }
 
@@ -592,9 +621,9 @@ function renderList(){
       delta=`<span class="delta ${cls}">${sym} ${Math.abs(g)} g</span>`;
     } else delta=`<span class="delta flat">—</span>`;
     html+=`<div class="row">
-      <div class="date">${prettyDate(e.date)}<small>${e.date}</small></div>
+      <div class="date">${esc(prettyDate(e.date))}<small>${esc(e.date)}</small></div>
       <div class="right">${delta}<span class="w">${fmt(e.kg)} kg</span>
-      <button class="del" data-date="${e.date}" aria-label="Supprimer">✕</button></div>
+      <button class="del" data-date="${esc(e.date)}" aria-label="Supprimer">✕</button></div>
     </div>`;
   }
   list.innerHTML=html;
@@ -621,6 +650,15 @@ function exportJson(){
   download('ma-pesee-'+todayISO()+'.json', JSON.stringify(data,null,2), 'application/json');
   toast('JSON exporté'); closeSheet();
 }
+// Valide une entrée importée : date réelle au format YYYY-MM-DD + poids plausible.
+function validEntry(e){
+  if(!e || typeof e.date!=='string' || !/^\d{4}-\d{2}-\d{2}$/.test(e.date)) return false;
+  const [y,m,d]=e.date.split('-').map(Number);
+  const dt=new Date(Date.UTC(y,m-1,d));
+  if(dt.getUTCFullYear()!==y || dt.getUTCMonth()!==m-1 || dt.getUTCDate()!==d) return false;
+  const kg=Number(e.kg);
+  return isFinite(kg) && kg>=1 && kg<=700;
+}
 function importFile(file){
   const reader=new FileReader();
   reader.onload=()=>{
@@ -628,19 +666,34 @@ function importFile(file){
       let imported=[];
       const txt=reader.result.trim();
       if(file.name.endsWith('.json')){
-        imported=JSON.parse(txt);
+        const parsed=JSON.parse(txt);
+        // accepte l'ancien format (tableau) ET une future enveloppe {entries:[...]}
+        imported=Array.isArray(parsed) ? parsed : (Array.isArray(parsed.entries)?parsed.entries:[]);
       } else { // CSV
         txt.split(/\r?\n/).slice(1).forEach(line=>{
           if(!line.trim()) return;
           const [date,kg]=line.split(',');
-          if(date&&kg) imported.push({date:date.trim(), kg:parseFloat(kg)});
+          if(date&&kg) imported.push({date:date.trim(), kg:parseFloat(String(kg).replace(',','.'))});
         });
       }
-      // fusion : la date importée remplace l'existante
+      // validation + normalisation (0,1 kg)
+      const valid=[]; let ignored=0;
+      imported.forEach(e=>{ if(validEntry(e)) valid.push({date:e.date, kg:Math.round(Number(e.kg)*10)/10}); else ignored++; });
+      if(!valid.length){ toast('Aucune donnée valide dans ce fichier'); return; }
+      // aperçu avant d'appliquer
+      const existing=new Set(data.map(e=>e.date));
+      let add=0, upd=0;
+      valid.forEach(e=>{ existing.has(e.date)?upd++:add++; });
+      const msg='Importer ces données ?\n\n'
+        +'• '+add+' nouvelle(s) pesée(s)\n'
+        +'• '+upd+' mise(s) à jour\n'
+        +(ignored?('• '+ignored+' ignorée(s) car invalide(s)\n'):'');
+      if(!confirm(msg)) return;
+      // application : la valeur importée remplace celle du même jour
       const map=new Map(data.map(e=>[e.date,e.kg]));
-      imported.forEach(e=>{ if(e.date && !isNaN(e.kg)) map.set(e.date, Math.round(e.kg*1000)/1000); });
+      valid.forEach(e=>map.set(e.date, e.kg));
       data=[...map].map(([date,kg])=>({date,kg})).sort(byDate);
-      save(); render(); toast(imported.length+' pesées importées'); closeSheet();
+      save(); render(); toast(add+' ajoutée(s), '+upd+' mise(s) à jour'); closeSheet();
     }catch(err){ toast('Fichier illisible'); }
   };
   reader.readAsText(file);
@@ -811,6 +864,7 @@ function closeSheet(){ $('#overlay').classList.remove('show'); $('#sheet').class
 
 /* ---------- Events ---------- */
 $('#addBtn').onclick=addWeight;
+$('#undoBtn').onclick=undoDelete;
 // molette de poids
 $('#weightPick').onclick=openPicker;
 $('#pickValidate').onclick=validatePick;
