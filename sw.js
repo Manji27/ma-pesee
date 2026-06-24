@@ -1,7 +1,7 @@
 // Service worker — fonctionnement hors-ligne SANS bloquer les mises à jour.
 // Stratégie : "network-first" pour la page (toujours la dernière version en ligne),
 // "cache-first" pour les ressources statiques (icônes…).
-const CACHE = "ma-pesee-v42";
+const CACHE = "ma-pesee-v43";
 const ASSETS = ["index.html", "manifest.json", "sw.js",
   "icon-180.png", "icon-192.png", "icon-512.png",
   "manifest-marie.json", "marie-icon-180.png", "marie-icon-192.png", "marie-icon-512.png",

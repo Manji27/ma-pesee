@@ -13,13 +13,15 @@
 <script>
   /* Applique le thème enregistré avant le rendu (évite le flash de couleurs). */
   (function(){ try{
+    // Lien dédié Marie (?app=marie) : icône Marie + thème Île par défaut
+    if(new URLSearchParams(location.search).get('app')==='marie') localStorage.setItem('maPesee.app','marie');
+    var isMarie = localStorage.getItem('maPesee.app')==='marie';
+    if(isMarie && !localStorage.getItem('maPesee.theme')) localStorage.setItem('maPesee.theme','ile'); // Île par défaut (modifiable ensuite)
     if(localStorage.getItem('maPesee.theme')==='ile'){
       document.documentElement.setAttribute('data-theme','ile');
       var m=document.querySelector('meta[name=theme-color]'); if(m) m.setAttribute('content','#F7EFD9');
     }
-    // Icône d'app dédiée : ouvrir .../?app=marie puis « Ajouter à l'écran d'accueil » -> icône Marie (mémorisé)
-    if(new URLSearchParams(location.search).get('app')==='marie') localStorage.setItem('maPesee.app','marie');
-    if(localStorage.getItem('maPesee.app')==='marie'){
+    if(isMarie){   // bascule manifeste + icônes vers Marie (pour « Ajouter à l'écran d'accueil »)
       var mf=document.querySelector('link[rel=manifest]'); if(mf) mf.setAttribute('href','manifest-marie.json');
       var ai=document.querySelector('link[rel="apple-touch-icon"]'); if(ai) ai.setAttribute('href','marie-icon-180.png');
       var ic=document.querySelector('link[rel=icon]'); if(ic) ic.setAttribute('href','marie-icon-192.png');
@@ -263,7 +265,7 @@
   <header>
     <div class="brand">
       <h1>Ma <span>Pesée</span></h1>
-      <span class="ver">v42</span>
+      <span class="ver">v43</span>
     </div>
     <button class="menu-btn" id="menuBtn" aria-label="Menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button>
   </header>
@@ -509,42 +511,47 @@ let _dlgTimer=null, _audioCtx=null, _clipSrc=null, _wheelSilent=false;
 const SND={ talk:'inspirations/dialogues/talk.mp3',
             choice:'inspirations/dialogues/choice.wav',
             selector:'inspirations/dialogues/selector.wav' };
-const _raw={};            // name -> ArrayBuffer préchargé (sans AudioContext)
 const _snd={};            // name -> AudioBuffer décodé
+const _dec={};            // décodage lancé/terminé
 let _audioUnlocked=false;
-// Précharge les octets très tôt — aucun AudioContext requis (OK avant tout geste).
-function prefetchSounds(){
-  for(const k in SND){
-    if(_raw[k] || prefetchSounds['_'+k]) continue;
-    prefetchSounds['_'+k]=true;
-    fetch(SND[k]).then(r=>r.arrayBuffer()).then(b=>{ _raw[k]=b; decodeOne(k); }).catch(()=>{ prefetchSounds['_'+k]=false; });
+function audioCtx(){
+  if(!_audioCtx){
+    _audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+    // iOS 16.5+ : joue même si l'interrupteur « silencieux » du téléphone est activé.
+    try{ if(navigator.audioSession) navigator.audioSession.type='playback'; }catch(e){}
   }
+  return _audioCtx;
 }
-function decodeOne(k){
-  if(!_audioCtx || !_raw[k] || _snd[k]) return;
-  try{ _audioCtx.decodeAudioData(_raw[k].slice(0), b=>{ _snd[k]=b; }, ()=>{}); }catch(e){}
+// Démarrage : crée le contexte (suspendu) et DÉCODE les sons à l'avance -> prêts dès le 1er tap.
+function audioPreload(){
+  try{
+    const ctx=audioCtx();
+    for(const k in SND){
+      if(_snd[k]||_dec[k]) continue;
+      _dec[k]=true;
+      fetch(SND[k]).then(r=>r.arrayBuffer())
+        .then(b=>ctx.decodeAudioData(b, x=>{_snd[k]=x;}, ()=>{_dec[k]=false;}))
+        .catch(()=>{_dec[k]=false;});
+    }
+  }catch(e){}
 }
-// À appeler DANS un geste utilisateur (clic) : crée et débloque le contexte — indispensable sur iOS.
+// Geste utilisateur : débloque l'audio (résume + buffer muet) — indispensable sur iOS.
 function audioInit(){
   try{
-    if(!_audioCtx){
-      _audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-      // iOS 16.5+ : joue même si l'interrupteur « silencieux » du téléphone est activé.
-      try{ if(navigator.audioSession) navigator.audioSession.type='playback'; }catch(e){}
-    }
-    if(_audioCtx.state==='suspended') _audioCtx.resume();
+    const ctx=audioCtx();
+    if(ctx.state!=='running') ctx.resume();
     if(!_audioUnlocked){     // déverrouillage iOS : un buffer muet joué dans le geste
-      const s=_audioCtx.createBufferSource(); s.buffer=_audioCtx.createBuffer(1,1,22050);
-      s.connect(_audioCtx.destination); s.start(0);
+      const s=ctx.createBufferSource(); s.buffer=ctx.createBuffer(1,1,22050);
+      s.connect(ctx.destination); s.start(0);
       _audioUnlocked=true;
     }
-    for(const k in SND) decodeOne(k);   // décode maintenant que le contexte existe
+    audioPreload();          // au cas où le préchargement n'a pas encore eu lieu
   }catch(e){}
 }
 function playSound(name, loop, gain){
   try{
     if(!_audioCtx) return null;
-    if(_audioCtx.state==='suspended') _audioCtx.resume();
+    if(_audioCtx.state!=='running') _audioCtx.resume();
     const buf=_snd[name]; if(!buf) return null;
     const src=_audioCtx.createBufferSource(); src.buffer=buf; src.loop=!!loop;
     let out=src;
@@ -1254,7 +1261,7 @@ buildWheel(wheelG, 10, i=>String(i));
 buildWheel(wheelG2, 10, i=>String(i));
 render();
 applyTheme(localStorage.getItem(THEME_KEY)||'nuit');   // synchronise l'UI du sélecteur (le thème est déjà posé par le script du <head>)
-if(isIle()) prefetchSounds();   // précharge les octets des sons (décodage au 1er geste utilisateur)
+if(isIle()) audioPreload();   // crée le contexte + décode les sons dès le chargement (son dispo au 1er tap)
 initSync();
 </script>
 </body>
