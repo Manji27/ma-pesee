@@ -265,7 +265,7 @@
   <header>
     <div class="brand">
       <h1>Ma <span>Pesée</span></h1>
-      <span class="ver">v43</span>
+      <span class="ver">v44</span>
     </div>
     <button class="menu-btn" id="menuBtn" aria-label="Menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button>
   </header>
@@ -397,31 +397,61 @@
 const KEY = "maPesee.v1";
 const BAK = KEY + ".bak";          // dernière copie valide connue
 const STAMP = KEY + ".savedAt";    // horodatage du dernier enregistrement local
+const SCHEMA = 2;                  // format de stockage (1 = ancien tableau brut sans horodatage)
 const $ = s => document.querySelector(s);
 let corruptOnBoot = false;         // vrai si les données principales étaient illisibles au démarrage
-let data = load();          // [{date:"YYYY-MM-DD", kg:Number}]
+let tombstones = {};               // {date: ISO} — suppressions mémorisées pour les propager à la synchro
+let data = load();          // [{date:"YYYY-MM-DD", kg:Number, updatedAt:ISO}]
 let range = 90;
 const GOAL_KEY = "maPesee.goal";
 let goal = parseFloat(localStorage.getItem(GOAL_KEY)) || 0;
 
 /* ---------- Stockage ---------- */
-function parseArr(s){ const d=JSON.parse(s); if(!Array.isArray(d)) throw new Error('format invalide'); return d; }
+function nowISO(){ return new Date().toISOString(); }
+// Horodatage de référence pour les données migrées (sans updatedAt) : midi UTC du jour de la pesée.
+// Déterministe -> deux appareils qui migrent le même historique obtiennent la même valeur (zéro faux conflit).
+function migBaseline(date){ return date+'T12:00:00.000Z'; }
+
+// Lit le stockage : enveloppe {schema,unit,entries,tombstones} OU ancien tableau brut.
+// Normalise chaque entrée (kg numérique + updatedAt) et renvoie {entries, tombstones}. Lève si illisible.
+function parseEnvelope(s){
+  const d=JSON.parse(s);
+  let entries, tombs;
+  if(Array.isArray(d)){ entries=d; tombs={}; }                                   // schéma 1 (ancien)
+  else if(d && Array.isArray(d.entries)){ entries=d.entries; tombs=(d.tombstones&&typeof d.tombstones==='object')?d.tombstones:{}; }
+  else throw new Error('format invalide');
+  entries=entries.filter(e=>e&&typeof e.date==='string')
+    .map(e=>({date:e.date, kg:Number(e.kg), updatedAt: typeof e.updatedAt==='string'?e.updatedAt:migBaseline(e.date)}))
+    .filter(e=>isFinite(e.kg));
+  return {entries, tombstones:tombs};
+}
+function serializeEnvelope(entries, tombs, pretty){
+  const obj={schema:SCHEMA, unit:'kg', entries, tombstones:tombs};
+  return pretty ? JSON.stringify(obj,null,2) : JSON.stringify(obj);
+}
+// Borne la croissance : oublie les tombstones de plus d'un an (les vraies données sont minuscules).
+function pruneTombstones(){
+  const cut=Date.now()-365*86400000;
+  for(const d in tombstones){ const t=Date.parse(tombstones[d]); if(isFinite(t)&&t<cut) delete tombstones[d]; }
+}
 
 function load(){
   const raw = localStorage.getItem(KEY);
   if(raw != null){
-    try{ return parseArr(raw).sort(byDate); }
+    try{ const env=parseEnvelope(raw); tombstones=env.tombstones; return env.entries.sort(byDate); }
     catch(e){
       // Données principales illisibles : NE JAMAIS écraser. Tenter la copie de secours.
       console.error('maPesee: données principales illisibles', e);
-      try{ const b=localStorage.getItem(BAK); if(b!=null){ const d=parseArr(b).sort(byDate); localStorage.setItem(KEY, b); return d; } }catch(_){}
+      const b=localStorage.getItem(BAK);
+      if(b!=null){ try{ const env=parseEnvelope(b); tombstones=env.tombstones; localStorage.setItem(KEY, b); return env.entries.sort(byDate); }catch(_){} }
       try{ localStorage.setItem(KEY+'.corrupt', raw); }catch(_){}  // garde l'original pour récupération manuelle
       corruptOnBoot = true;
       return [];
     }
   }
   // Clé absente : restaurer depuis la copie de secours si elle existe.
-  try{ const b=localStorage.getItem(BAK); if(b!=null){ const d=parseArr(b).sort(byDate); if(d.length){ localStorage.setItem(KEY, b); return d; } } }catch(_){}
+  const b=localStorage.getItem(BAK);
+  if(b!=null){ try{ const env=parseEnvelope(b); if(env.entries.length){ tombstones=env.tombstones; localStorage.setItem(KEY, b); return env.entries.sort(byDate); } }catch(_){} }
   return [];
 }
 function byDate(a,b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }
@@ -429,15 +459,17 @@ function byDate(a,b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }
 // Écriture locale défensive : copie de secours + garde-fou anti-écrasement + gestion du quota.
 function persistStore(){
   // Garde-fou : après un démarrage corrompu, ne pas remplacer des données illisibles par du vide.
-  if(data.length===0 && corruptOnBoot){
+  // (« vide » = aucune pesée ET aucune suppression ; un clearAll volontaire pose des tombstones et passe.)
+  if(data.length===0 && Object.keys(tombstones).length===0 && corruptOnBoot){
     const prev=localStorage.getItem(KEY);
-    if(prev && prev!=='[]') return false;
+    if(prev && prev!=='[]' && prev!=='') return false;
   }
+  pruneTombstones();
   try{
     const prev=localStorage.getItem(KEY);
-    if(prev){ try{ if(parseArr(prev).length) localStorage.setItem(BAK, prev); }catch(_){} } // .bak = dernier état valide
-    localStorage.setItem(KEY, JSON.stringify(data));
-    localStorage.setItem(STAMP, new Date().toISOString());
+    if(prev){ try{ if(parseEnvelope(prev).entries.length) localStorage.setItem(BAK, prev); }catch(_){} } // .bak = dernier état valide
+    localStorage.setItem(KEY, serializeEnvelope(data, tombstones));
+    localStorage.setItem(STAMP, nowISO());
     corruptOnBoot = false;
     return true;
   }catch(e){
@@ -469,9 +501,10 @@ let pickedKg = null;   // poids choisi à la molette
 function commitWeight(picked){
   const kg = Math.round(picked*1000)/1000;
   const date = $('#dateInput').value || todayISO();
+  delete tombstones[date];                 // une nouvelle pesée annule une éventuelle suppression de ce jour
   const existing = data.find(e=>e.date===date);
-  if(existing) existing.kg = kg;          // remplace la pesée de ce jour
-  else data.push({date, kg});
+  if(existing){ existing.kg = kg; existing.updatedAt = nowISO(); }   // remplace la pesée de ce jour
+  else data.push({date, kg, updatedAt: nowISO()});
   data.sort(byDate); save();
   $('#dateInput').value = todayISO();     // revient à aujourd'hui après l'enregistrement
   render();
@@ -607,12 +640,18 @@ function delEntry(date){
   const entry=data.find(e=>e.date===date);
   if(!entry) return;
   pendingUndo={date:entry.date, kg:entry.kg};
-  data=data.filter(e=>e.date!==date); save(); render();
+  data=data.filter(e=>e.date!==date);
+  tombstones[date]=nowISO();               // marque la suppression -> propagée aux autres appareils à la synchro
+  save(); render();
   showUndo('Pesée du '+prettyDate(date)+' supprimée');
 }
 function undoDelete(){
   if(!pendingUndo) return;
-  if(!data.some(e=>e.date===pendingUndo.date)){ data.push(pendingUndo); data.sort(byDate); save(); render(); }
+  if(!data.some(e=>e.date===pendingUndo.date)){
+    delete tombstones[pendingUndo.date];
+    data.push({date:pendingUndo.date, kg:pendingUndo.kg, updatedAt:nowISO()});
+    data.sort(byDate); save(); render();
+  }
   pendingUndo=null; hideUndo(); toast('Suppression annulée');
 }
 function showUndo(msg){
@@ -892,7 +931,7 @@ function exportCsv(){
 }
 function exportJson(){
   if(!data.length) return toast('Aucune donnée à exporter');
-  download('ma-pesee-'+todayISO()+'.json', JSON.stringify(data,null,2), 'application/json');
+  download('ma-pesee-'+todayISO()+'.json', serializeEnvelope(data, tombstones, true), 'application/json');
   toast('JSON exporté'); closeSheet();
 }
 // Découpe une ligne CSV en respectant les champs entre guillemets ("75,3" reste entier).
@@ -938,7 +977,7 @@ function importFile(file){
       const txt=reader.result.trim();
       if(file.name.endsWith('.json')){
         const parsed=JSON.parse(txt);
-        // accepte l'ancien format (tableau) ET une future enveloppe {entries:[...]}
+        // accepte l'ancien format (tableau brut) ET l'enveloppe {schema,entries:[...]} ; les pesées importées sont (ré)horodatées maintenant
         imported=Array.isArray(parsed) ? parsed : (Array.isArray(parsed.entries)?parsed.entries:[]);
       } else { // CSV — détection auto du séparateur, de l'ordre des colonnes et du format date/décimale
         const lines=txt.split(/\r?\n/).filter(l=>l.trim());
@@ -969,10 +1008,11 @@ function importFile(file){
         +'• '+upd+' mise(s) à jour\n'
         +(ignored?('• '+ignored+' ignorée(s) car invalide(s)\n'):'');
       if(!confirm(msg)) return;
-      // application : la valeur importée remplace celle du même jour
-      const map=new Map(data.map(e=>[e.date,e.kg]));
-      valid.forEach(e=>map.set(e.date, e.kg));
-      data=[...map].map(([date,kg])=>({date,kg})).sort(byDate);
+      // application : la valeur importée (horodatée maintenant -> prioritaire à la synchro) remplace celle du même jour
+      const now=nowISO();
+      const map=new Map(data.map(e=>[e.date,e]));
+      valid.forEach(e=>{ delete tombstones[e.date]; map.set(e.date, {date:e.date, kg:e.kg, updatedAt:now}); });
+      data=[...map.values()].sort(byDate);
       save(); render(); toast(add+' ajoutée(s), '+upd+' mise(s) à jour'); closeSheet();
     }catch(err){ toast('Fichier illisible'); }
   };
@@ -980,6 +1020,8 @@ function importFile(file){
 }
 function clearAll(){
   if(!confirm('Effacer TOUTES les pesées ? Cette action est définitive.')) return;
+  const ts=nowISO();
+  data.forEach(e=>{ tombstones[e.date]=ts; });   // tombstones -> l'effacement se propage aux autres appareils
   data=[]; save(); render(); toast('Tout effacé'); closeSheet();
 }
 
@@ -1006,7 +1048,7 @@ function api(path, opts={}){
 }
 function gistPayload(){
   return JSON.stringify({description:GIST_DESC, public:false,
-    files:{[GIST_FILE]:{content:JSON.stringify(data,null,2)}}});
+    files:{[GIST_FILE]:{content:serializeEnvelope(data, tombstones, true)}}});
 }
 
 // Étape ① : ouvrir la page GitHub de création du jeton.
@@ -1070,11 +1112,36 @@ async function syncFindOrCreate(){
   await pushNow(); // pousse l'état fusionné (crée le gist si besoin)
 }
 
-// Fusion : union par date ; en cas de conflit même jour, le distant (durable) gagne.
+// Fusion par horodatage : pour chaque date, l'état le plus récent gagne — qu'il s'agisse
+// d'une pesée (updatedAt) ou d'une suppression (tombstone). Les suppressions se propagent donc
+// aux autres appareils au lieu de « ressusciter », et une vieille valeur distante n'écrase plus une édition récente.
+// Accepte aussi un distant à l'ancien format (tableau brut) -> horodatage de migration déterministe.
 function mergeRemote(remote){
-  const map=new Map(data.map(e=>[e.date,e.kg]));
-  remote.forEach(e=>{ if(e&&e.date&&!isNaN(e.kg)) map.set(e.date, Math.round(e.kg*1000)/1000); });
-  data=[...map].map(([date,kg])=>({date,kg})).sort(byDate);
+  let rEntries=[], rTombs={};
+  if(Array.isArray(remote)){ rEntries=remote; }
+  else if(remote && Array.isArray(remote.entries)){ rEntries=remote.entries; rTombs=(remote.tombstones&&typeof remote.tombstones==='object')?remote.tombstones:{}; }
+  rEntries=rEntries.filter(e=>e&&typeof e.date==='string'&&isFinite(Number(e.kg)))
+    .map(e=>({date:e.date, kg:Math.round(Number(e.kg)*1000)/1000, updatedAt: typeof e.updatedAt==='string'?e.updatedAt:migBaseline(e.date)}));
+
+  // état retenu par date ; en cas d'égalité d'horodatage, la pesée l'emporte sur la suppression (préserve la donnée).
+  const state=new Map();
+  const consider=(date, payload)=>{
+    const t=Date.parse(payload.updatedAt)||0;
+    const cur=state.get(date);
+    if(!cur || t>cur.t || (t===cur.t && !payload.deleted)) state.set(date, {t, ...payload});
+  };
+  data.forEach(e=>consider(e.date, {kg:e.kg, updatedAt:e.updatedAt||migBaseline(e.date)}));
+  for(const d in tombstones) consider(d, {deleted:true, updatedAt:tombstones[d]});
+  rEntries.forEach(e=>consider(e.date, {kg:e.kg, updatedAt:e.updatedAt}));
+  for(const d in rTombs) consider(d, {deleted:true, updatedAt:rTombs[d]});
+
+  const newData=[], newTombs={};
+  for(const [date, s] of state){
+    if(s.deleted) newTombs[date]=s.updatedAt;
+    else newData.push({date, kg:s.kg, updatedAt:s.updatedAt});
+  }
+  data=newData.sort(byDate);
+  tombstones=newTombs;
   persistStore();
   render();
 }
