@@ -10,11 +10,42 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" type="image/png" href="icon-192.png">
+<script>
+  /* Applique le thème enregistré avant le rendu (évite le flash de couleurs). */
+  (function(){ try{
+    if(localStorage.getItem('maPesee.theme')==='ile'){
+      document.documentElement.setAttribute('data-theme','ile');
+      var m=document.querySelector('meta[name=theme-color]'); if(m) m.setAttribute('content','#F7EFD9');
+    }
+  }catch(e){} })();
+</script>
 <style>
   :root{
+    color-scheme:dark;
     --bg:#0f172a; --bg2:#1e293b; --card:#1e293b; --line:#334155;
     --txt:#f1f5f9; --muted:#94a3b8; --accent:#38bdf8; --accent2:#0ea5e9;
+    --accent3:#fbbf24; --on-accent:#04293f; --trend:#f97316;
     --good:#34d399; --bad:#f87171; --radius:18px;
+    --hero:linear-gradient(160deg,#1e293b,#0f243b);
+    --tip-bg:#0b1220; --overlay:rgba(0,0,0,.55);
+  }
+  /* Thème « Île » (inspiré d'Animal Crossing) — voir THEME-ACNH.md */
+  :root[data-theme="ile"]{
+    color-scheme:light;
+    --bg:#F7EFD9; --bg2:#FBF6E6; --card:#FFFDF4; --line:#E6D9B6;
+    --txt:#6B5640; --muted:#7A6A4A; --accent:#15805C; --accent2:#0F7351;
+    --accent3:#9A6308; --on-accent:#FFFFFF; --trend:#A35F12;
+    --good:#277839; --bad:#B8442F; --radius:24px;
+    --hero:linear-gradient(160deg,#FFFDF4,#EFF6E6);
+    --tip-bg:#FFFDF4; --overlay:rgba(80,64,40,.45);
+  }
+  /* Décor d'île en arrière-plan (thème Île) — voile crème pour garder le texte lisible */
+  :root[data-theme="ile"] body{
+    background-color:var(--bg);
+    background-image:linear-gradient(rgba(247,239,217,.66),rgba(247,239,217,.78)),
+      url("inspirations/sea.png");
+    background-size:cover;background-position:center center;
+    background-attachment:fixed;background-repeat:no-repeat;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;height:100%}
@@ -32,8 +63,15 @@
     width:42px;height:42px;border-radius:12px;font-size:18px;cursor:pointer;display:grid;place-items:center}
 
   /* Hero / saisie */
-  .hero{background:linear-gradient(160deg,#1e293b,#0f243b);border:1px solid var(--line);
-    border-radius:var(--radius);padding:20px;margin-bottom:16px}
+  .hero{background:var(--hero);border:1px solid var(--line);
+    border-radius:var(--radius);padding:20px;margin-bottom:16px;position:relative}
+  /* Mascotte Marie — visible seulement en thème Île, dans l'espace vide en haut à droite */
+  .hero-mascot{display:none}
+  :root[data-theme="ile"] .hero-mascot{
+    display:block;position:absolute;top:6px;right:92px;height:108px;width:auto;
+    transform:translateX(50%);   /* centre horizontalement sur le bouton date (centre à 92px du bord), quelle que soit la largeur de l'image */
+    mix-blend-mode:multiply;     /* masque le fond blanc de l'image contre la carte crème (correctif en attendant le PNG détouré) */
+    pointer-events:none}
   .hero .label{color:var(--muted);font-size:13px;text-transform:uppercase;letter-spacing:.5px}
   .current{display:flex;align-items:baseline;gap:8px;margin:6px 0 4px}
   .current .val{font-size:46px;font-weight:800;letter-spacing:-1.5px;line-height:1}
@@ -45,17 +83,14 @@
     margin-top:16px;color:var(--muted);font-size:13px;font-weight:600}
   .datepick input{background:var(--bg);border:1px solid var(--line);color:var(--txt);
     font-size:15px;font-weight:600;padding:10px 12px;border-radius:12px;
-    font-family:inherit;color-scheme:dark}
+    font-family:inherit}
   .datepick input:focus{outline:none;border-color:var(--accent)}
   .entry{display:flex;gap:12px;margin-top:16px}
   .weightpick{flex:1;background:var(--bg);border:1px solid var(--line);color:var(--txt);
-    font-size:24px;font-weight:800;padding:14px 16px;border-radius:14px;text-align:center;
-    display:flex;align-items:baseline;justify-content:center;gap:6px;cursor:pointer;letter-spacing:-.5px}
+    font-size:19px;font-weight:800;padding:16px;border-radius:14px;text-align:center;
+    display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer}
   .weightpick small{font-size:14px;color:var(--muted);font-weight:600}
   .weightpick:active{border-color:var(--accent)}
-  #addBtn{background:var(--accent);color:#04293f;border:none;font-weight:800;font-size:16px;
-    padding:0 22px;border-radius:14px;cursor:pointer;white-space:nowrap}
-  #addBtn:active{transform:scale(.97)}
   .hint{color:var(--muted);font-size:12px;margin-top:14px;text-align:center}
 
   /* Carte graphique */
@@ -66,10 +101,10 @@
   .ranges{display:flex;gap:6px}
   .ranges button{background:var(--bg);border:1px solid var(--line);color:var(--muted);
     font-size:12px;font-weight:600;padding:6px 10px;border-radius:9px;cursor:pointer}
-  .ranges button.on{background:var(--accent);color:#04293f;border-color:var(--accent)}
+  .ranges button.on{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
   #chartCard{position:relative}
   #chart{width:100%;display:block;touch-action:none}
-  .tip{position:absolute;pointer-events:none;background:#0b1220;border:1px solid var(--accent);
+  .tip{position:absolute;pointer-events:none;background:var(--tip-bg);border:1px solid var(--accent);
     color:var(--txt);font-size:12px;font-weight:600;padding:7px 10px;border-radius:10px;
     opacity:0;transform:translate(-50%,-8px);transition:opacity .12s;white-space:nowrap;z-index:5;line-height:1.35}
   .tip.show{opacity:1}
@@ -97,7 +132,7 @@
   .delta.up{color:var(--bad)} .delta.down{color:var(--good)} .delta.flat{color:var(--muted)}
 
   /* Sheet menu */
-  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;
+  .overlay{position:fixed;inset:0;background:var(--overlay);opacity:0;pointer-events:none;
     transition:.2s;z-index:20}
   .overlay.show{opacity:1;pointer-events:auto}
   .sheet{position:fixed;left:0;right:0;bottom:0;background:var(--bg2);border-top:1px solid var(--line);
@@ -113,7 +148,7 @@
   .sheet button .ic{font-size:18px}
   .sheet button.danger{color:var(--bad)}
   .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);
-    background:var(--accent);color:#04293f;font-weight:700;padding:12px 20px;border-radius:30px;
+    background:var(--accent);color:var(--on-accent);font-weight:700;padding:12px 20px;border-radius:30px;
     opacity:0;pointer-events:none;transition:.25s;z-index:30;font-size:14px}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   .snack{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);
@@ -121,7 +156,7 @@
     padding:8px 8px 8px 18px;border-radius:30px;opacity:0;pointer-events:none;transition:.25s;
     z-index:31;font-size:14px;display:flex;align-items:center;gap:14px;max-width:92vw}
   .snack.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
-  .snack button{background:var(--accent);color:#04293f;border:none;font-weight:800;
+  .snack button{background:var(--accent);color:var(--on-accent);border:none;font-weight:800;
     padding:9px 18px;border-radius:22px;font-size:14px;cursor:pointer;white-space:nowrap}
 
   /* Sauvegarde */
@@ -141,12 +176,12 @@
   #tokenInput{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--txt);
     font-size:15px;padding:14px;border-radius:13px;margin-bottom:9px}
   #tokenInput:focus{outline:none;border-color:var(--accent)}
-  #saveTokenBtn{background:var(--accent)!important;color:#04293f!important;border-color:var(--accent)!important}
+  #saveTokenBtn{background:var(--accent)!important;color:var(--on-accent)!important;border-color:var(--accent)!important}
   .goalrow{display:flex;gap:9px;margin-bottom:9px}
   .goalrow input{flex:1;background:var(--bg);border:1px solid var(--line);color:var(--txt);
     font-size:15px;font-weight:600;padding:14px;border-radius:13px;min-width:0}
   .goalrow input:focus{outline:none;border-color:var(--accent)}
-  .goalrow button{width:auto;margin:0;padding:0 18px;background:var(--accent);color:#04293f;
+  .goalrow button{width:auto;margin:0;padding:0 18px;background:var(--accent);color:var(--on-accent);
     border:none;border-radius:13px;font-weight:800;font-size:15px}
   .goalrow #goalClear{background:var(--card);border:1px solid var(--line);color:var(--muted);padding:0 15px}
 
@@ -168,10 +203,41 @@
   .wheels .punit{font-size:17px;color:var(--muted);font-weight:700;align-self:center;margin-left:2px}
   .center-band{position:absolute;left:8px;right:8px;top:88px;height:44px;pointer-events:none;
     border-top:1px solid var(--accent);border-bottom:1px solid var(--accent);
-    background:rgba(56,189,248,.06);border-radius:8px}
-  .primary-btn{width:100%;background:var(--accent);color:#04293f;border:none;font-weight:800;
+    background:color-mix(in srgb, var(--accent) 7%, transparent);border-radius:8px}
+  .primary-btn{width:100%;background:var(--accent);color:var(--on-accent);border:none;font-weight:800;
     font-size:16px;padding:16px;border-radius:14px;cursor:pointer}
   .primary-btn:active{transform:scale(.99)}
+
+  /* Sélecteur de thème */
+  .themerow{display:flex;gap:9px;margin-bottom:9px}
+  .themerow button{flex:1;width:auto;margin:0;justify-content:center}
+  .theme-opt.on{border-color:var(--accent);color:var(--accent)}
+  .sw{width:16px;height:16px;border-radius:50%;border:1px solid rgba(0,0,0,.15);flex:none}
+  .sw-nuit{background:linear-gradient(135deg,#1e293b,#38bdf8)}
+  .sw-ile{background:linear-gradient(135deg,#F7EFD9,#15805C)}
+  :root[data-theme="ile"] .ver{display:none}   /* pas de numéro de version en mode Île */
+
+  /* Boîte de dialogue « Marie » (thème Île) — style Animal Crossing */
+  .dialogue{position:fixed;left:50%;bottom:calc(22px + env(safe-area-inset-bottom));
+    transform:translateX(-50%) translateY(18px);
+    width:min(520px,calc(100vw - 26px));min-height:122px;
+    color:#6B5640;
+    padding:26px 36px 32px;font-weight:800;font-size:17px;line-height:1.42;
+    opacity:0;pointer-events:none;transition:opacity .22s,transform .22s cubic-bezier(.2,.9,.3,1.3);
+    z-index:26}
+  .dlg-bg{position:absolute;inset:0;width:100%;height:100%;z-index:-1;
+    filter:drop-shadow(0 9px 15px rgba(107,86,64,.26))}
+  .dlg-bg path{fill:#FBF5E0}
+  .dialogue.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto;cursor:pointer}
+  .dlg-name{position:absolute;top:-14px;left:24px;background:#E8728C;color:#fff;
+    font-weight:800;font-size:14px;letter-spacing:.3px;padding:5px 16px;border-radius:999px;
+    box-shadow:0 3px 0 rgba(150,60,80,.18)}
+  .dlg-text{margin:6px 0 0;min-height:2.8em}
+  .dlg-text .caret{opacity:.5;font-weight:600}
+  .dlg-arrow{position:absolute;bottom:9px;left:50%;transform:translateX(-50%);
+    color:#F0A500;font-size:13px;opacity:0}
+  .dialogue.done .dlg-arrow{opacity:1;animation:dlgbob .8s infinite}
+  @keyframes dlgbob{50%{transform:translateX(-50%) translateY(3px)}}
 </style>
 </head>
 <body>
@@ -179,7 +245,7 @@
   <header>
     <div class="brand">
       <h1>Ma <span>Pesée</span></h1>
-      <span class="ver">v19</span>
+      <span class="ver">v35</span>
     </div>
     <button class="menu-btn" id="menuBtn" aria-label="Menu">⋯</button>
   </header>
@@ -189,6 +255,7 @@
   </div>
 
   <section class="hero">
+    <img class="hero-mascot" src="inspirations/ac-marie.png" alt="" aria-hidden="true">
     <div class="label">Poids actuel</div>
     <div class="current">
       <span class="val" id="curVal">—</span>
@@ -200,12 +267,8 @@
       <input type="date" id="dateInput">
     </label>
     <div class="entry">
-      <button id="weightPick" class="weightpick">
-        <span id="weightPickVal">—</span><small>kg</small>
-      </button>
-      <button id="addBtn">Ajouter</button>
+      <button id="weightPick" class="weightpick">Ajouter son poids</button>
     </div>
-    <div class="hint">Touche le poids pour le régler à la molette (au centième de kilo) · choisis la date pour une ancienne pesée</div>
   </section>
 
   <div class="stats" id="stats" style="display:none">
@@ -254,6 +317,12 @@
 <div class="sheet" id="sheet">
   <div class="grip"></div>
 
+  <h3>Apparence</h3>
+  <div class="themerow">
+    <button class="theme-opt" data-theme-val="nuit"><span class="sw sw-nuit"></span> Nuit</button>
+    <button class="theme-opt" data-theme-val="ile"><span class="sw sw-ile"></span> Île</button>
+  </div>
+
   <h3>Sauvegarde automatique</h3>
   <div class="backup-box" id="backupBox">
     Tes données ne sont que sur ce téléphone. Active la sauvegarde pour les copier
@@ -292,6 +361,16 @@
 </div>
 <div class="toast" id="toast"></div>
 <div class="snack" id="undoBar"><span id="undoMsg"></span><button id="undoBtn">Annuler</button></div>
+
+<!-- Boîte de dialogue Marie (thème Île) -->
+<div class="dialogue" id="dialogue" role="status" aria-live="polite">
+  <svg class="dlg-bg" viewBox="0 0 600 220" preserveAspectRatio="none" aria-hidden="true">
+    <path d="M16 110C16 42 56 19 120 17C181 15 214 31 300 29C392 27 421 11 483 15C548 19 584 45 584 110C584 178 548 201 483 205C421 209 392 190 300 192C214 194 181 211 120 207C56 203 16 178 16 110Z"/>
+  </svg>
+  <span class="dlg-name">Marie</span>
+  <p class="dlg-text" id="dlgText"></p>
+  <span class="dlg-arrow">▼</span>
+</div>
 
 <script>
 "use strict";
@@ -361,22 +440,106 @@ function prettyDate(iso){
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2000); }
 function esc(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function dayNum(iso){ const [y,m,d]=iso.split('-').map(Number); return Math.floor(Date.UTC(y,m-1,d)/86400000); }
+function cssVar(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
 
 /* ---------- Ajouter une pesée ---------- */
 let pickedKg = null;   // poids choisi à la molette
 
-function addWeight(){
-  if(pickedKg==null){ toast('Choisis un poids'); openPicker(); return; }
-  const kg = Math.round(pickedKg*1000)/1000;
+// Enregistre la pesée (appelé directement par « Valider » du sélecteur).
+function commitWeight(picked){
+  const kg = Math.round(picked*1000)/1000;
   const date = $('#dateInput').value || todayISO();
   const existing = data.find(e=>e.date===date);
   if(existing) existing.kg = kg;          // remplace la pesée de ce jour
   else data.push({date, kg});
   data.sort(byDate); save();
-  $('#dateInput').value = todayISO();     // revient à aujourd'hui après l'ajout
+  $('#dateInput').value = todayISO();     // revient à aujourd'hui après l'enregistrement
   render();
   const j = date===todayISO() ? 'aujourd\'hui' : prettyDate(date);
-  toast(existing ? 'Pesée du '+j+' mise à jour' : 'Pesée du '+j+' enregistrée 🎉');
+  if(isIle()) showDialogue(marieMessage(kg, date));
+  else toast(existing ? 'Pesée du '+j+' mise à jour' : 'Pesée du '+j+' enregistrée 🎉');
+}
+
+/* ---------- Dialogue « Marie » (thème Île, façon Animal Crossing) ---------- */
+function isIle(){ return document.documentElement.getAttribute('data-theme')==='ile'; }
+
+// Message encourageant selon la variation vs la pesée précédente.
+function marieMessage(kg, date){
+  const idx=data.findIndex(e=>e.date===date);
+  const prev=idx>0 ? data[idx-1] : null;
+  if(!prev) return "Enchantée, moi c'est Marie ! J'ai bien noté ta toute première pesée. On suit ça ensemble, à bientôt !";
+  const g=Math.round((kg-prev.kg)*1000);
+  if(g<0) return `Bravo, tu as perdu ${Math.abs(g)} g ! Tu es sur la bonne voie, continue comme ça !`;
+  if(g>0) return "Le poids change d'un jour à l'autre, c'est tout à fait normal et ça ne définit rien. L'important c'est la tendance sur la durée. Je suis fière de toi, continue à prendre soin de toi !";
+  return "Pile le même poids qu'avant ! La régularité, c'est déjà une belle victoire.";
+}
+
+let _dlgTimer=null, _audioCtx=null, _clipSrc=null, _wheelSilent=false;
+// Gestionnaire audio : charge/décode plusieurs sons et les joue à la demande.
+const SND={ talk:'inspirations/dialogues/ac-dialogue-sound.mp3',
+            choice:'inspirations/dialogues/choice.wav',
+            selector:'inspirations/dialogues/selector.wav' };
+const _snd={};   // name -> {ready, loading, buf}
+function audioInit(){
+  try{
+    if(!_audioCtx) _audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+    if(_audioCtx.state==='suspended') _audioCtx.resume();
+    for(const k in SND){
+      const s=_snd[k];
+      if(s && (s.ready||s.loading)) continue;
+      _snd[k]={ready:false,loading:true,buf:null};
+      fetch(SND[k]).then(r=>r.arrayBuffer()).then(b=>_audioCtx.decodeAudioData(b))
+        .then(buf=>{ _snd[k]={ready:true,loading:false,buf}; })
+        .catch(()=>{ _snd[k]={ready:false,loading:false,buf:null}; });
+    }
+  }catch(e){}
+}
+function playSound(name, loop, gain){
+  try{
+    if(!_audioCtx) return null;
+    if(_audioCtx.state==='suspended') _audioCtx.resume();
+    const s=_snd[name]; if(!s || !s.ready) return null;
+    const src=_audioCtx.createBufferSource(); src.buffer=s.buf; src.loop=!!loop;
+    let out=src;
+    if(gain!=null && gain!==1){ const g=_audioCtx.createGain(); g.gain.value=gain; src.connect(g); out=g; }
+    out.connect(_audioCtx.destination); src.start();
+    return src;
+  }catch(e){ return null; }
+}
+// Voix du dialogue : une seule source en boucle pendant le défilement (jamais superposée -> pas d'écho).
+function startClip(){ stopClip(); _clipSrc=playSound('talk', true); }
+function stopClip(){ try{ if(_clipSrc){ _clipSrc.loop=false; _clipSrc.stop(); } }catch(e){} _clipSrc=null; }
+function showDialogue(msg){
+  const box=$('#dialogue'), txt=$('#dlgText');
+  clearInterval(box._typer); clearTimeout(_dlgTimer);
+  const chars=[...msg];                 // découpe par point de code (emoji intacts)
+  box.dataset.full=msg;
+  txt.textContent='';
+  box.classList.remove('done'); box.classList.add('show');
+  startClip();                                               // une seule source, pendant tout le défilement
+  let i=0;
+  box._typer=setInterval(()=>{
+    txt.textContent=chars.slice(0,++i).join('');
+    if(i>=chars.length){
+      clearInterval(box._typer);
+      stopClip();                                            // la voix s'arrête quand le texte est fini
+      box.classList.add('done');
+      _dlgTimer=setTimeout(hideDialogue, 4500);              // se ferme tout seul
+    }
+  }, 52);
+}
+function tapDialogue(){
+  const box=$('#dialogue'), txt=$('#dlgText');
+  if(!box.classList.contains('done')){                      // 1er tap : tout afficher
+    clearInterval(box._typer); stopClip();
+    txt.textContent=box.dataset.full||'';
+    box.classList.add('done');
+    clearTimeout(_dlgTimer); _dlgTimer=setTimeout(hideDialogue, 3500);
+  } else hideDialogue();                                     // 2e tap : fermer
+}
+function hideDialogue(){
+  const box=$('#dialogue');
+  box.classList.remove('show'); clearInterval(box._typer); clearTimeout(_dlgTimer); stopClip();
 }
 
 let pendingUndo=null;
@@ -466,6 +629,9 @@ function renderChart(){
 
   const W=600,H=280,pad={t:20,r:14,b:26,l:46};
   const iw=W-pad.l-pad.r, ih=H-pad.t-pad.b;
+  // Palette lue depuis les variables CSS (s'adapte au thème actif).
+  const C={ grid:cssVar('--line'), axis:cssVar('--muted'), line:cssVar('--accent'),
+            trend:cssVar('--trend'), goal:cssVar('--accent3'), point:cssVar('--bg'), txt:cssVar('--txt') };
   const kgs=pts.map(p=>p.kg);
   const ma=movingAvg(pts, 7);
   let min=Math.min(...kgs), max=Math.max(...kgs);
@@ -482,42 +648,42 @@ function renderChart(){
   // grille + labels Y (3 lignes)
   for(let i=0;i<=3;i++){
     const v=min+(max-min)*i/3, y=Y(v);
-    g+=`<line x1="${pad.l}" y1="${y}" x2="${W-pad.r}" y2="${y}" stroke="#334155" stroke-width="1"/>`;
-    g+=`<text x="${pad.l-6}" y="${y+4}" fill="#94a3b8" font-size="11" text-anchor="end">${v.toFixed(1)}</text>`;
+    g+=`<line x1="${pad.l}" y1="${y}" x2="${W-pad.r}" y2="${y}" stroke="${C.grid}" stroke-width="1"/>`;
+    g+=`<text x="${pad.l-6}" y="${y+4}" fill="${C.axis}" font-size="11" text-anchor="end">${v.toFixed(1)}</text>`;
   }
   // labels X (début / milieu / fin)
   [0, Math.floor(pts.length/2), pts.length-1].forEach((idx,i)=>{
     const p=pts[idx], x=X(p.date);
     const anchor=i===0?'start':i===2?'end':'middle';
-    g+=`<text x="${x}" y="${H-8}" fill="#94a3b8" font-size="11" text-anchor="${anchor}">${shortDate(p.date)}</text>`;
+    g+=`<text x="${x}" y="${H-8}" fill="${C.axis}" font-size="11" text-anchor="${anchor}">${shortDate(p.date)}</text>`;
   });
   // ligne d'objectif
   if(goal && goal>=min && goal<=max){
     const gy=Y(goal);
-    g+=`<line x1="${pad.l}" y1="${gy}" x2="${W-pad.r}" y2="${gy}" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="5 4"/>`;
-    g+=`<text x="${W-pad.r}" y="${gy-5}" fill="#fbbf24" font-size="11" font-weight="700" text-anchor="end">Objectif ${goal.toFixed(1)}</text>`;
+    g+=`<line x1="${pad.l}" y1="${gy}" x2="${W-pad.r}" y2="${gy}" stroke="${C.goal}" stroke-width="1.5" stroke-dasharray="5 4"/>`;
+    g+=`<text x="${W-pad.r}" y="${gy-5}" fill="${C.goal}" font-size="11" font-weight="700" text-anchor="end">Objectif ${goal.toFixed(1)}</text>`;
   }
   // aire + ligne (poids réel)
   const line=pts.map((p,i)=>(i?'L':'M')+X(p.date).toFixed(1)+' '+Y(p.kg).toFixed(1)).join(' ');
   const area=`M${X(pts[0].date).toFixed(1)} ${(H-pad.b)} `+pts.map(p=>'L'+X(p.date).toFixed(1)+' '+Y(p.kg).toFixed(1)).join(' ')+` L${X(pts[pts.length-1].date).toFixed(1)} ${(H-pad.b)} Z`;
   g+=`<defs><linearGradient id="ag" x1="0" y1="0" x2="0" y2="1">
-       <stop offset="0" stop-color="#38bdf8" stop-opacity=".35"/>
-       <stop offset="1" stop-color="#38bdf8" stop-opacity="0"/></linearGradient></defs>`;
+       <stop offset="0" stop-color="${C.line}" stop-opacity=".35"/>
+       <stop offset="1" stop-color="${C.line}" stop-opacity="0"/></linearGradient></defs>`;
   g+=`<path d="${area}" fill="url(#ag)"/>`;
-  g+=`<path d="${line}" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+  g+=`<path d="${line}" fill="none" stroke="${C.line}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
   // courbe de tendance lissée (moyenne mobile 7)
   if(pts.length>=4){
     const maLine=pts.map((p,i)=>(i?'L':'M')+X(p.date).toFixed(1)+' '+Y(ma[i]).toFixed(1)).join(' ');
-    g+=`<path d="${maLine}" fill="none" stroke="#f97316" stroke-width="2" stroke-dasharray="2 3" stroke-linejoin="round" stroke-linecap="round" opacity=".9"/>`;
+    g+=`<path d="${maLine}" fill="none" stroke="${C.trend}" stroke-width="2" stroke-dasharray="2 3" stroke-linejoin="round" stroke-linecap="round" opacity=".9"/>`;
   }
   // points (seulement si peu nombreux)
-  if(pts.length<=40) pts.forEach(p=>{ g+=`<circle cx="${X(p.date).toFixed(1)}" cy="${Y(p.kg).toFixed(1)}" r="3" fill="#0f172a" stroke="#38bdf8" stroke-width="2"/>`; });
+  if(pts.length<=40) pts.forEach(p=>{ g+=`<circle cx="${X(p.date).toFixed(1)}" cy="${Y(p.kg).toFixed(1)}" r="3" fill="${C.point}" stroke="${C.line}" stroke-width="2"/>`; });
   // dernier point en évidence
   const lp=pts[pts.length-1];
-  g+=`<circle cx="${X(lp.date).toFixed(1)}" cy="${Y(lp.kg).toFixed(1)}" r="5" fill="#38bdf8"/>`;
+  g+=`<circle cx="${X(lp.date).toFixed(1)}" cy="${Y(lp.kg).toFixed(1)}" r="5" fill="${C.line}"/>`;
   // marqueur interactif (caché par défaut)
-  g+=`<line id="cMark" x1="0" y1="${pad.t}" x2="0" y2="${H-pad.b}" stroke="#e2e8f0" stroke-width="1" opacity="0"/>`;
-  g+=`<circle id="cDot" r="5.5" fill="#e2e8f0" opacity="0"/>`;
+  g+=`<line id="cMark" x1="0" y1="${pad.t}" x2="0" y2="${H-pad.b}" stroke="${C.txt}" stroke-width="1" opacity="0"/>`;
+  g+=`<circle id="cDot" r="5.5" fill="${C.txt}" opacity="0"/>`;
   svg.innerHTML=g;
 
   // mémorise la géométrie pour le toucher
@@ -525,9 +691,9 @@ function renderChart(){
 
   // légende
   const leg=$('#legend'); leg.style.display='flex';
-  leg.innerHTML=`<span><i style="border-color:#38bdf8"></i>Poids</span>`
-    + (pts.length>=4?`<span><i style="border-color:#f97316;border-top-style:dashed"></i>Tendance</span>`:'')
-    + (goal&&goal>=min&&goal<=max?`<span><i style="border-color:#fbbf24;border-top-style:dashed"></i>Objectif</span>`:'');
+  leg.innerHTML=`<span><i style="border-color:${C.line}"></i>Poids</span>`
+    + (pts.length>=4?`<span><i style="border-color:${C.trend};border-top-style:dashed"></i>Tendance</span>`:'')
+    + (goal&&goal>=min&&goal<=max?`<span><i style="border-color:${C.goal};border-top-style:dashed"></i>Objectif</span>`:'');
 }
 
 // Infobulle au toucher / clic sur le graphique
@@ -586,16 +752,26 @@ function buildWheel(el, count, fmtFn){
   el.innerHTML=h;
 }
 function wheelIndex(el){ return Math.max(0, Math.round(el.scrollTop/IT)); }
-function setWheel(el, i){ el.scrollTop=i*IT; highlight(el); }
+function setWheel(el, i){ el.scrollTop=i*IT; el._lastSel=i; highlight(el); }
 function highlight(el){
   const sel=wheelIndex(el);
   el.querySelectorAll('.it').forEach((n,k)=>n.classList.toggle('sel', k===sel));
+}
+// Comme highlight, mais joue le « tic » du sélecteur quand le cran sélectionné change (thème Île).
+function wheelTick(el){
+  const sel=wheelIndex(el);
+  if(el._lastSel===sel){ return; }
+  el._lastSel=sel;
+  el.querySelectorAll('.it').forEach((n,k)=>n.classList.toggle('sel', k===sel));
+  if(!_wheelSilent && isIle()) playSound('selector', false, 0.8);
 }
 
 function currentPickValue(){
   return pickedKg!=null ? pickedKg : (data.length ? data[data.length-1].kg : 70);
 }
 function openPicker(){
+  if(isIle()) audioInit();          // débloque/charge l'audio sur ce geste (ouverture du sélecteur)
+  _wheelSilent=true;                // évite des « tics » parasites pendant le positionnement initial
   const base=currentPickValue();
   let kg=Math.floor(base), c=Math.round((base-kg)*100);   // centièmes (0..99)
   if(c>99){ kg+=1; c=0; }
@@ -603,7 +779,8 @@ function openPicker(){
   const t=Math.floor(c/10), h=c%10;                       // dixièmes, centièmes
   $('#pickOverlay').classList.add('show'); $('#pickSheet').classList.add('show');
   // le scroll doit être réglé après l'affichage de la feuille
-  requestAnimationFrame(()=>{ setWheel(wheelKg, kg-KGMIN); setWheel(wheelG, t); setWheel(wheelG2, h); });
+  requestAnimationFrame(()=>{ setWheel(wheelKg, kg-KGMIN); setWheel(wheelG, t); setWheel(wheelG2, h);
+    setTimeout(()=>{ _wheelSilent=false; }, 500); });
 }
 function closePicker(){ $('#pickOverlay').classList.remove('show'); $('#pickSheet').classList.remove('show'); }
 function validatePick(){
@@ -611,8 +788,8 @@ function validatePick(){
   const t=wheelIndex(wheelG);             // dixièmes
   const h=wheelIndex(wheelG2);            // centièmes
   pickedKg=Math.round((kg+t/10+h/100)*100)/100;
-  $('#weightPickVal').textContent=fmt(pickedKg);
   closePicker();
+  commitWeight(pickedKg);                 // « Valider » enregistre directement la pesée
 }
 
 function renderList(){
@@ -905,18 +1082,38 @@ async function initSync(){
 function openSheet(){ $('#overlay').classList.add('show'); $('#sheet').classList.add('show'); }
 function closeSheet(){ $('#overlay').classList.remove('show'); $('#sheet').classList.remove('show'); }
 
+/* ---------- Thème ---------- */
+const THEME_KEY="maPesee.theme";
+function applyTheme(name){
+  const ile = name==='ile';
+  if(ile) document.documentElement.setAttribute('data-theme','ile');
+  else document.documentElement.removeAttribute('data-theme');
+  localStorage.setItem(THEME_KEY, ile?'ile':'nuit');
+  const meta=document.querySelector('meta[name=theme-color]');
+  if(meta) meta.setAttribute('content', ile?'#F7EFD9':'#0f172a');
+  document.querySelectorAll('.theme-opt').forEach(b=>b.classList.toggle('on', b.dataset.themeVal===(ile?'ile':'nuit')));
+  renderChart();   // le SVG relit la palette CSS
+}
+
 /* ---------- Events ---------- */
-$('#addBtn').onclick=addWeight;
 $('#undoBtn').onclick=undoDelete;
+$('#dialogue').onclick=tapDialogue;
+// Son AC sur chaque bouton de l'app (thème Île)
+document.addEventListener('click', e=>{
+  if(!isIle()) return;
+  if(!e.target.closest('button')) return;
+  audioInit(); playSound('choice');
+}, true);
 // molette de poids
 $('#weightPick').onclick=openPicker;
 $('#pickValidate').onclick=validatePick;
 $('#pickOverlay').onclick=closePicker;
-wheelKg.addEventListener('scroll',()=>{ highlight(wheelKg); });
-wheelG.addEventListener('scroll',()=>{ highlight(wheelG); });
-wheelG2.addEventListener('scroll',()=>{ highlight(wheelG2); });
+wheelKg.addEventListener('scroll',()=>{ wheelTick(wheelKg); });
+wheelG.addEventListener('scroll',()=>{ wheelTick(wheelG); });
+wheelG2.addEventListener('scroll',()=>{ wheelTick(wheelG2); });
 $('#menuBtn').onclick=openSheet;
 $('#overlay').onclick=closeSheet;
+document.querySelectorAll('.theme-opt').forEach(b=>b.onclick=()=>applyTheme(b.dataset.themeVal));
 $('#expCsv').onclick=exportCsv;
 $('#expJson').onclick=exportJson;
 $('#importBtn').onclick=()=>$('#fileInput').click();
@@ -959,6 +1156,8 @@ buildWheel(wheelKg, KGMAX-KGMIN+1, i=>KGMIN+i);
 buildWheel(wheelG, 10, i=>String(i));
 buildWheel(wheelG2, 10, i=>String(i));
 render();
+applyTheme(localStorage.getItem(THEME_KEY)||'nuit');   // synchronise l'UI du sélecteur (le thème est déjà posé par le script du <head>)
+if(isIle()) audioInit();   // précharge/décode les sons (prêts dès la 1re interaction) en thème Île
 initSync();
 </script>
 </body>
