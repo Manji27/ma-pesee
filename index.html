@@ -109,9 +109,9 @@
   /* Carte graphique */
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
     padding:16px;margin-bottom:16px}
-  .card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+  .card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;row-gap:8px}
   .card-head h2{font-size:15px;margin:0;font-weight:700}
-  .ranges{display:flex;gap:6px}
+  .ranges{display:flex;gap:6px;flex-wrap:wrap}
   .ranges button{background:var(--bg);border:1px solid var(--line);color:var(--muted);
     font-size:12px;font-weight:600;padding:6px 10px;border-radius:9px;cursor:pointer}
   .ranges button.on{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
@@ -136,6 +136,8 @@
   .list{display:flex;flex-direction:column;gap:1px;background:var(--line);
     border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
   .row{background:var(--card);display:flex;align-items:center;justify-content:space-between;padding:13px 15px}
+  .row[data-date]{cursor:pointer}
+  .row[data-date]:active{background:var(--bg)}
   .row .date{font-size:14px}
   .row .date small{display:block;color:var(--muted);font-size:11px;margin-top:2px}
   .row .right{display:flex;align-items:center;gap:12px}
@@ -265,7 +267,7 @@
   <header>
     <div class="brand">
       <h1>Ma <span>Pesée</span></h1>
-      <span class="ver">v45</span>
+      <span class="ver">v46</span>
     </div>
     <button class="menu-btn" id="menuBtn" aria-label="Menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button>
   </header>
@@ -301,9 +303,9 @@
     <div class="card-head">
       <h2>Évolution</h2>
       <div class="ranges" id="ranges">
-        <button data-r="30">30j</button>
-        <button data-r="90" class="on">90j</button>
-        <button data-r="365">1an</button>
+        <button data-r="30">1 mois</button>
+        <button data-r="180">6 mois</button>
+        <button data-r="365">1 an</button>
         <button data-r="0">Tout</button>
       </div>
     </div>
@@ -320,7 +322,7 @@
 <div class="overlay" id="pickOverlay"></div>
 <div class="sheet picker-sheet" id="pickSheet">
   <div class="grip"></div>
-  <h3>Règle ton poids</h3>
+  <h3 id="pickTitle">Règle ton poids</h3>
   <div class="wheels">
     <div class="wheel" id="wheelKg"></div>
     <div class="sep">,</div>
@@ -402,7 +404,9 @@ const $ = s => document.querySelector(s);
 let corruptOnBoot = false;         // vrai si les données principales étaient illisibles au démarrage
 let tombstones = {};               // {date: ISO} — suppressions mémorisées pour les propager à la synchro
 let data = load();          // [{date:"YYYY-MM-DD", kg:Number, updatedAt:ISO}]
-let range = 90;
+const RANGE_KEY = "maPesee.range";
+// Plage du graphe mémorisée (jours ; 0 = tout). Défaut 6 mois -> on voit la tendance longue, pas que les dernières semaines.
+let range = (()=>{ const v=parseInt(localStorage.getItem(RANGE_KEY),10); return [30,180,365,0].includes(v) ? v : 180; })();
 const GOAL_KEY = "maPesee.goal";
 let goal = parseFloat(localStorage.getItem(GOAL_KEY)) || 0;
 
@@ -930,10 +934,22 @@ function wheelTick(el){
 function currentPickValue(){
   return pickedKg!=null ? pickedKg : (data.length ? data[data.length-1].kg : 70);
 }
-function openPicker(){
+// `editDate` (chaîne) : ouvre le sélecteur pré-réglé sur la pesée de ce jour pour la corriger.
+// Sans argument (ou appelé avec l'Event du bouton « Ajouter »), c'est une nouvelle pesée.
+function openPicker(editDate){
   if(isIle()) audioInit();          // débloque/charge l'audio sur ce geste (ouverture du sélecteur)
   _wheelSilent=true;                // évite des « tics » parasites pendant le positionnement initial
-  const base=currentPickValue();
+  let base;
+  if(typeof editDate==='string'){
+    const e=data.find(x=>x.date===editDate);
+    if(!e) return;
+    $('#dateInput').value=editDate;          // commitWeight mettra à jour CETTE date
+    base=e.kg;
+    $('#pickTitle').textContent='Modifier la pesée du '+prettyDate(editDate);
+  } else {
+    base=currentPickValue();
+    $('#pickTitle').textContent='Règle ton poids';
+  }
   let kg=Math.floor(base), c=Math.round((base-kg)*100);   // centièmes (0..99)
   if(c>99){ kg+=1; c=0; }
   kg=Math.min(Math.max(kg,KGMIN),KGMAX);
@@ -966,14 +982,17 @@ function renderList(){
       const sym=g>0?'▲':g<0?'▼':'=';
       delta=`<span class="delta ${cls}">${sym} ${Math.abs(g)} g</span>`;
     } else delta=`<span class="delta flat">—</span>`;
-    html+=`<div class="row">
+    html+=`<div class="row" data-date="${esc(e.date)}" title="Toucher pour modifier">
       <div class="date">${esc(prettyDate(e.date))}<small>${esc(e.date)}</small></div>
       <div class="right">${delta}<span class="w">${fmt(e.kg)} kg</span>
       <button class="del" data-date="${esc(e.date)}" aria-label="Supprimer">✕</button></div>
     </div>`;
   }
   list.innerHTML=html;
-  list.querySelectorAll('.del').forEach(b=>b.onclick=()=>delEntry(b.dataset.date));
+  list.querySelectorAll('.del').forEach(b=>b.onclick=ev=>{ ev.stopPropagation(); delEntry(b.dataset.date); });
+  list.querySelectorAll('.row[data-date]').forEach(r=>{
+    r.onclick=ev=>{ if(ev.target.closest('.del')) return; openPicker(r.dataset.date); };   // toucher la ligne -> corriger la pesée
+  });
 }
 
 /* ---------- Export / Import ---------- */
@@ -1367,9 +1386,12 @@ chartEl.addEventListener('pointermove',e=>chartHover(e.clientX));
 chartEl.addEventListener('pointerup',chartHide);
 chartEl.addEventListener('pointercancel',chartHide);
 chartEl.addEventListener('pointerleave',chartHide);
-$('#ranges').querySelectorAll('button').forEach(b=>{
-  b.onclick=()=>{ range=+b.dataset.r; $('#ranges').querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); renderChart(); };
-});
+(function initRanges(){
+  const btns=$('#ranges').querySelectorAll('button');
+  const mark=()=>btns.forEach(b=>b.classList.toggle('on', +b.dataset.r===range));
+  btns.forEach(b=>{ b.onclick=()=>{ range=+b.dataset.r; localStorage.setItem(RANGE_KEY, range); mark(); renderChart(); }; });
+  mark();   // marque le bouton correspondant à la plage mémorisée au démarrage
+})();
 
 /* ---------- PWA service worker ---------- */
 if('serviceWorker' in navigator){
