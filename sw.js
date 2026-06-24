@@ -1,7 +1,7 @@
 // Service worker — fonctionnement hors-ligne SANS bloquer les mises à jour.
 // Stratégie : "network-first" pour la page (toujours la dernière version en ligne),
 // "cache-first" pour les ressources statiques (icônes…).
-const CACHE = "ma-pesee-v36";
+const CACHE = "ma-pesee-v37";
 const ASSETS = ["index.html", "manifest.json", "sw.js",
   "icon-180.png", "icon-192.png", "icon-512.png",
   "inspirations/ac-marie.webp", "inspirations/sea.webp",
@@ -31,9 +31,10 @@ self.addEventListener("fetch", e => {
     || url.pathname.endsWith("/") || url.pathname.endsWith("index.html");
 
   if (isPage) {
-    // Toujours tenter le réseau d'abord -> dernière version garantie quand en ligne.
+    // Réseau d'abord, en contournant le cache HTTP (no-store) -> la dernière version
+    // s'applique dès le 1er chargement, sans avoir à vider le cache manuellement.
     e.respondWith(
-      fetch(e.request).then(res => {
+      fetch(e.request, { cache: "no-store" }).then(res => {
         const copy = res.clone();
         caches.open(CACHE).then(c => c.put("index.html", copy)).catch(() => {});
         return res;
