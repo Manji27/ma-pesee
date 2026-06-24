@@ -43,7 +43,7 @@
   :root[data-theme="ile"] body{
     background-color:var(--bg);
     background-image:linear-gradient(rgba(247,239,217,.66),rgba(247,239,217,.78)),
-      url("inspirations/sea.png");
+      url("inspirations/sea.webp");
     background-size:cover;background-position:center center;
     background-attachment:fixed;background-repeat:no-repeat;
   }
@@ -70,7 +70,7 @@
   :root[data-theme="ile"] .hero-mascot{
     display:block;position:absolute;top:6px;right:92px;height:108px;width:auto;
     transform:translateX(50%);   /* centre horizontalement sur le bouton date (centre à 92px du bord), quelle que soit la largeur de l'image */
-    mix-blend-mode:multiply;     /* masque le fond blanc de l'image contre la carte crème (correctif en attendant le PNG détouré) */
+    filter:drop-shadow(0 3px 4px rgba(107,86,64,.22));
     pointer-events:none}
   .hero .label{color:var(--muted);font-size:13px;text-transform:uppercase;letter-spacing:.5px}
   .current{display:flex;align-items:baseline;gap:8px;margin:6px 0 4px}
@@ -238,6 +238,11 @@
     color:#F0A500;font-size:13px;opacity:0}
   .dialogue.done .dlg-arrow{opacity:1;animation:dlgbob .8s infinite}
   @keyframes dlgbob{50%{transform:translateX(-50%) translateY(3px)}}
+
+  /* Accessibilité : réduire les animations si l'utilisateur le demande */
+  @media (prefers-reduced-motion: reduce){
+    *{animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.05s !important}
+  }
 </style>
 </head>
 <body>
@@ -245,7 +250,7 @@
   <header>
     <div class="brand">
       <h1>Ma <span>Pesée</span></h1>
-      <span class="ver">v35</span>
+      <span class="ver">v36</span>
     </div>
     <button class="menu-btn" id="menuBtn" aria-label="Menu">⋯</button>
   </header>
@@ -255,7 +260,7 @@
   </div>
 
   <section class="hero">
-    <img class="hero-mascot" src="inspirations/ac-marie.png" alt="" aria-hidden="true">
+    <img class="hero-mascot" alt="" aria-hidden="true">
     <div class="label">Poids actuel</div>
     <div class="current">
       <span class="val" id="curVal">—</span>
@@ -476,7 +481,7 @@ function marieMessage(kg, date){
 
 let _dlgTimer=null, _audioCtx=null, _clipSrc=null, _wheelSilent=false;
 // Gestionnaire audio : charge/décode plusieurs sons et les joue à la demande.
-const SND={ talk:'inspirations/dialogues/ac-dialogue-sound.mp3',
+const SND={ talk:'inspirations/dialogues/talk.mp3',
             choice:'inspirations/dialogues/choice.wav',
             selector:'inspirations/dialogues/selector.wav' };
 const _snd={};   // name -> {ready, loading, buf}
@@ -516,6 +521,12 @@ function showDialogue(msg){
   box.dataset.full=msg;
   txt.textContent='';
   box.classList.remove('done'); box.classList.add('show');
+  // Accessibilité : si l'utilisateur préfère moins d'animations, on affiche le texte d'un coup.
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches){
+    txt.textContent=msg; box.classList.add('done'); startClip();
+    _dlgTimer=setTimeout(()=>{ stopClip(); hideDialogue(); }, 2600);
+    return;
+  }
   startClip();                                               // une seule source, pendant tout le défilement
   let i=0;
   box._typer=setInterval(()=>{
@@ -1086,8 +1097,11 @@ function closeSheet(){ $('#overlay').classList.remove('show'); $('#sheet').class
 const THEME_KEY="maPesee.theme";
 function applyTheme(name){
   const ile = name==='ile';
-  if(ile) document.documentElement.setAttribute('data-theme','ile');
-  else document.documentElement.removeAttribute('data-theme');
+  if(ile){
+    document.documentElement.setAttribute('data-theme','ile');
+    const m=document.querySelector('.hero-mascot');           // charge la mascotte seulement en thème Île
+    if(m && !m.getAttribute('src')) m.setAttribute('src','inspirations/ac-marie.webp');
+  } else document.documentElement.removeAttribute('data-theme');
   localStorage.setItem(THEME_KEY, ile?'ile':'nuit');
   const meta=document.querySelector('meta[name=theme-color]');
   if(meta) meta.setAttribute('content', ile?'#F7EFD9':'#0f172a');
