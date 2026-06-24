@@ -141,7 +141,8 @@
     max-height:88vh;max-height:85dvh;overflow-y:auto;
     -webkit-overflow-scrolling:touch;overscroll-behavior:contain}
   .sheet.show{transform:translateY(0)}
-  .grip{width:42px;height:5px;background:var(--line);border-radius:3px;margin:6px auto 14px}
+  .grip{width:42px;height:5px;background:var(--line);border-radius:3px;margin:6px auto 14px;
+    touch-action:none;cursor:grab}
   .sheet h3{margin:0 0 12px;font-size:14px;color:var(--muted);font-weight:600}
   .sheet button{width:100%;background:var(--card);border:1px solid var(--line);color:var(--txt);
     text-align:left;padding:15px;border-radius:13px;font-size:15px;font-weight:600;margin-bottom:9px;cursor:pointer;
@@ -251,7 +252,7 @@
   <header>
     <div class="brand">
       <h1>Ma <span>Pesée</span></h1>
-      <span class="ver">v39</span>
+      <span class="ver">v40</span>
     </div>
     <button class="menu-btn" id="menuBtn" aria-label="Menu">⋯</button>
   </header>
@@ -1111,6 +1112,39 @@ async function initSync(){
 function openSheet(){ $('#overlay').classList.add('show'); $('#sheet').classList.add('show'); }
 function closeSheet(){ $('#overlay').classList.remove('show'); $('#sheet').classList.remove('show'); }
 
+// Glisser la feuille vers le bas pour la fermer (poignée, ou tirer depuis le haut du contenu).
+function makeSheetDraggable(sheet, closeFn){
+  let sy=0, dy=0, armed=false, drag=false;
+  sheet.addEventListener('pointerdown', e=>{
+    const onGrip = e.target.classList && e.target.classList.contains('grip');
+    if(!(onGrip || sheet.scrollTop<=0)) return;   // sinon : laisser défiler le contenu
+    sy=e.clientY; dy=0; armed=true; drag=false;
+  });
+  sheet.addEventListener('pointermove', e=>{
+    if(!armed) return;
+    const d=e.clientY-sy;
+    if(!drag){
+      if(d>6){ drag=true; sheet.style.transition='none'; try{sheet.setPointerCapture(e.pointerId);}catch(_){} } // vers le bas -> on prend la main
+      else if(d<-6){ armed=false; return; }       // vers le haut -> on laisse scroller
+      else return;
+    }
+    dy=Math.max(0,d);
+    sheet.style.transform='translateY('+dy+'px)';
+  });
+  const end=()=>{
+    if(!armed) return; armed=false;
+    if(drag){
+      drag=false; sheet.style.transition='';
+      const shouldClose = dy>110;
+      sheet.style.transform='';                   // retour au CSS (.show=0 ou fermé=100%)
+      if(shouldClose) closeFn();
+    }
+    dy=0;
+  };
+  sheet.addEventListener('pointerup', end);
+  sheet.addEventListener('pointercancel', end);
+}
+
 /* ---------- Thème ---------- */
 const THEME_KEY="maPesee.theme";
 function applyTheme(name){
@@ -1145,6 +1179,13 @@ wheelG.addEventListener('scroll',()=>{ wheelTick(wheelG); });
 wheelG2.addEventListener('scroll',()=>{ wheelTick(wheelG2); });
 $('#menuBtn').onclick=openSheet;
 $('#overlay').onclick=closeSheet;
+makeSheetDraggable($('#sheet'), closeSheet);       // glisser vers le bas pour fermer
+makeSheetDraggable($('#pickSheet'), closePicker);
+// iOS : le contexte audio est suspendu en arrière-plan -> le relancer au retour
+function resumeAudio(){ try{ if(_audioCtx && _audioCtx.state!=='running') _audioCtx.resume(); }catch(e){} }
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) resumeAudio(); });
+window.addEventListener('focus', resumeAudio);
+window.addEventListener('pageshow', resumeAudio);
 document.querySelectorAll('.theme-opt').forEach(b=>b.onclick=()=>applyTheme(b.dataset.themeVal));
 $('#expCsv').onclick=exportCsv;
 $('#expJson').onclick=exportJson;
