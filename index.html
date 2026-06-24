@@ -89,9 +89,13 @@
   .datepick{display:flex;align-items:center;justify-content:space-between;gap:10px;
     margin-top:16px;color:var(--muted);font-size:13px;font-weight:600}
   .datepick input{background:var(--bg);border:1px solid var(--line);color:var(--txt);
-    font-size:15px;font-weight:600;padding:10px 12px;border-radius:12px;
+    font-size:15px;font-weight:600;padding:10px 30px 10px 12px;border-radius:12px;
     font-family:inherit}
   .datepick input:focus{outline:none;border-color:var(--accent)}
+  .datewrap{position:relative;display:inline-flex;align-items:center}
+  .datechev{position:absolute;right:11px;top:50%;transform:translateY(-50%);
+    pointer-events:none;color:var(--muted);font-size:13px}
+  .datepick input::-webkit-calendar-picker-indicator{opacity:0}   /* on masque l'icône native, on affiche notre chevron */
   .entry{display:flex;gap:12px;margin-top:16px}
   .weightpick{flex:1;background:var(--bg);border:1px solid var(--line);color:var(--txt);
     font-size:19px;font-weight:800;padding:16px;border-radius:14px;text-align:center;
@@ -259,9 +263,9 @@
   <header>
     <div class="brand">
       <h1>Ma <span>Pesée</span></h1>
-      <span class="ver">v41</span>
+      <span class="ver">v42</span>
     </div>
-    <button class="menu-btn" id="menuBtn" aria-label="Menu">⋯</button>
+    <button class="menu-btn" id="menuBtn" aria-label="Menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button>
   </header>
 
   <div class="sync-pill" id="syncPill" style="display:none">
@@ -278,7 +282,7 @@
     <div class="trend flat" id="trend">Ajoute ta première pesée</div>
 
     <label class="datepick">Pesée du
-      <input type="date" id="dateInput">
+      <span class="datewrap"><input type="date" id="dateInput"><span class="datechev" aria-hidden="true">▾</span></span>
     </label>
     <div class="entry">
       <button id="weightPick" class="weightpick">Ajouter son poids</button>
@@ -476,6 +480,18 @@ function commitWeight(picked){
 
 /* ---------- Dialogue « Marie » (thème Île, façon Animal Crossing) ---------- */
 function isIle(){ return document.documentElement.getAttribute('data-theme')==='ile'; }
+
+// Centre la mascotte horizontalement sur le centre réel du champ date (s'adapte à iOS/Android).
+function positionMascot(){
+  if(!isIle()) return;
+  const m=document.querySelector('.hero-mascot'), inp=$('#dateInput'), hero=document.querySelector('.hero');
+  if(!m||!inp||!hero) return;
+  const hr=hero.getBoundingClientRect(), ir=inp.getBoundingClientRect();
+  if(!ir.width) return;
+  m.style.right=(hr.right-(ir.left+ir.width/2))+'px';   // distance bord droit -> centre du champ
+}
+window.addEventListener('resize', positionMascot);
+window.addEventListener('orientationchange', ()=>setTimeout(positionMascot,80));
 
 // Message encourageant selon la variation vs la pesée précédente.
 function marieMessage(kg, date){
@@ -1160,6 +1176,7 @@ function applyTheme(name){
     document.documentElement.setAttribute('data-theme','ile');
     const m=document.querySelector('.hero-mascot');           // charge la mascotte seulement en thème Île
     if(m && !m.getAttribute('src')) m.setAttribute('src','inspirations/ac-marie.webp');
+    positionMascot(); setTimeout(positionMascot,60);          // centre la mascotte sur le champ date (mesuré, fiable iOS)
   } else document.documentElement.removeAttribute('data-theme');
   localStorage.setItem(THEME_KEY, ile?'ile':'nuit');
   const meta=document.querySelector('meta[name=theme-color]');
