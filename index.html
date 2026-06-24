@@ -250,7 +250,7 @@
   <header>
     <div class="brand">
       <h1>Ma <span>Pesée</span></h1>
-      <span class="ver">v37</span>
+      <span class="ver">v38</span>
     </div>
     <button class="menu-btn" id="menuBtn" aria-label="Menu">⋯</button>
   </header>
@@ -484,27 +484,44 @@ let _dlgTimer=null, _audioCtx=null, _clipSrc=null, _wheelSilent=false;
 const SND={ talk:'inspirations/dialogues/talk.mp3',
             choice:'inspirations/dialogues/choice.wav',
             selector:'inspirations/dialogues/selector.wav' };
-const _snd={};   // name -> {ready, loading, buf}
+const _raw={};            // name -> ArrayBuffer préchargé (sans AudioContext)
+const _snd={};            // name -> AudioBuffer décodé
+let _audioUnlocked=false;
+// Précharge les octets très tôt — aucun AudioContext requis (OK avant tout geste).
+function prefetchSounds(){
+  for(const k in SND){
+    if(_raw[k] || prefetchSounds['_'+k]) continue;
+    prefetchSounds['_'+k]=true;
+    fetch(SND[k]).then(r=>r.arrayBuffer()).then(b=>{ _raw[k]=b; decodeOne(k); }).catch(()=>{ prefetchSounds['_'+k]=false; });
+  }
+}
+function decodeOne(k){
+  if(!_audioCtx || !_raw[k] || _snd[k]) return;
+  try{ _audioCtx.decodeAudioData(_raw[k].slice(0), b=>{ _snd[k]=b; }, ()=>{}); }catch(e){}
+}
+// À appeler DANS un geste utilisateur (clic) : crée et débloque le contexte — indispensable sur iOS.
 function audioInit(){
   try{
-    if(!_audioCtx) _audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-    if(_audioCtx.state==='suspended') _audioCtx.resume();
-    for(const k in SND){
-      const s=_snd[k];
-      if(s && (s.ready||s.loading)) continue;
-      _snd[k]={ready:false,loading:true,buf:null};
-      fetch(SND[k]).then(r=>r.arrayBuffer()).then(b=>_audioCtx.decodeAudioData(b))
-        .then(buf=>{ _snd[k]={ready:true,loading:false,buf}; })
-        .catch(()=>{ _snd[k]={ready:false,loading:false,buf:null}; });
+    if(!_audioCtx){
+      _audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+      // iOS 16.5+ : joue même si l'interrupteur « silencieux » du téléphone est activé.
+      try{ if(navigator.audioSession) navigator.audioSession.type='playback'; }catch(e){}
     }
+    if(_audioCtx.state==='suspended') _audioCtx.resume();
+    if(!_audioUnlocked){     // déverrouillage iOS : un buffer muet joué dans le geste
+      const s=_audioCtx.createBufferSource(); s.buffer=_audioCtx.createBuffer(1,1,22050);
+      s.connect(_audioCtx.destination); s.start(0);
+      _audioUnlocked=true;
+    }
+    for(const k in SND) decodeOne(k);   // décode maintenant que le contexte existe
   }catch(e){}
 }
 function playSound(name, loop, gain){
   try{
     if(!_audioCtx) return null;
     if(_audioCtx.state==='suspended') _audioCtx.resume();
-    const s=_snd[name]; if(!s || !s.ready) return null;
-    const src=_audioCtx.createBufferSource(); src.buffer=s.buf; src.loop=!!loop;
+    const buf=_snd[name]; if(!buf) return null;
+    const src=_audioCtx.createBufferSource(); src.buffer=buf; src.loop=!!loop;
     let out=src;
     if(gain!=null && gain!==1){ const g=_audioCtx.createGain(); g.gain.value=gain; src.connect(g); out=g; }
     out.connect(_audioCtx.destination); src.start();
@@ -1171,7 +1188,7 @@ buildWheel(wheelG, 10, i=>String(i));
 buildWheel(wheelG2, 10, i=>String(i));
 render();
 applyTheme(localStorage.getItem(THEME_KEY)||'nuit');   // synchronise l'UI du sélecteur (le thème est déjà posé par le script du <head>)
-if(isIle()) audioInit();   // précharge/décode les sons (prêts dès la 1re interaction) en thème Île
+if(isIle()) prefetchSounds();   // précharge les octets des sons (décodage au 1er geste utilisateur)
 initSync();
 </script>
 </body>
