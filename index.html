@@ -265,7 +265,7 @@
   <header>
     <div class="brand">
       <h1>Ma <span>Pesée</span></h1>
-      <span class="ver">v44</span>
+      <span class="ver">v45</span>
     </div>
     <button class="menu-btn" id="menuBtn" aria-label="Menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button>
   </header>
@@ -528,15 +528,77 @@ function positionMascot(){
 window.addEventListener('resize', positionMascot);
 window.addEventListener('orientationchange', ()=>setTimeout(positionMascot,80));
 
-// Message encourageant selon la variation vs la pesée précédente.
+// --- Pools de variantes (tirées de façon déterministe selon la date -> stable si on rouvre le même jour) ---
+const MSG_FIRST=[
+  "Enchantée, moi c'est Marie ! J'ai bien noté ta toute première pesée. On suit ça ensemble, à bientôt !",
+  "Bienvenue ! C'est ta première pesée, je la garde précieusement. On avance pas à pas, ensemble.",
+  "Ravie de te rencontrer ! Première pesée enregistrée. Le plus dur, c'est de commencer — et c'est déjà fait !"
+];
+const MSG_DOWN=[
+  g=>`Bravo, tu as perdu ${g} g ! Tu es sur la bonne voie, continue comme ça !`,
+  g=>`Joli, ${g} g de moins ! Petit à petit, ça finit par compter beaucoup.`,
+  g=>`${g} g envolés ! Je suis fière de toi, garde le rythme.`,
+  g=>`En baisse de ${g} g aujourd'hui — chaque pas dans la bonne direction mérite un sourire !`
+];
+const MSG_UP=[
+  "Le poids change d'un jour à l'autre, c'est tout à fait normal et ça ne définit rien. L'important c'est la tendance sur la durée. Je suis fière de toi, continue à prendre soin de toi !",
+  "Une petite remontée, et alors ? Le corps fluctue (eau, repas, sommeil…). Ce qui compte, c'est la régularité de ton suivi. Continue !",
+  "Pas d'inquiétude : un chiffre un jour ne dit rien tout seul. Tu prends soin de toi, et c'est ça qui compte vraiment.",
+  "Les variations font partie du chemin. Tu es là, tu notes, tu avances — c'est tout ce qui compte. Bravo !"
+];
+const MSG_FLAT=[
+  "Pile le même poids qu'avant ! La régularité, c'est déjà une belle victoire.",
+  "Stable aujourd'hui — et la stabilité, c'est précieux. Continue comme ça !",
+  "Même poids qu'à la dernière pesée. Tenir le cap, c'est aussi une réussite !"
+];
+const COUNT_MILESTONES=[10,25,50,100,150,200,250,300,365,500,750,1000];
+const STREAK_MILESTONES={7:'une semaine complète',14:'deux semaines',30:'un mois',60:'deux mois',100:'100 jours',180:'six mois',365:'une année entière'};
+
+// hash déterministe d'une chaîne -> entier positif (choisit une variante stable selon la date)
+function strHash(s){ let h=0; for(let i=0;i<s.length;i++){ h=(h*31+s.charCodeAt(i))|0; } return Math.abs(h); }
+function pick(arr, seed){ return arr[seed % arr.length]; }
+// Jours calendaires consécutifs avec une pesée, en terminant le jour `date`.
+function streakEndingAt(date){
+  const days=new Set(data.map(e=>dayNum(e.date)));
+  let n=0, d=dayNum(date);
+  while(days.has(d)){ n++; d--; }
+  return n;
+}
+// La pesée du jour est-elle un nouveau minimum (strictement sous toutes les autres) ?
+function isNewLow(kg, date){
+  const others=data.filter(e=>e.date!==date);
+  if(others.length<2) return false;          // pas significatif au tout début
+  return kg < Math.min(...others.map(e=>e.kg));
+}
+
+// Message de Marie : un seul message « spécial » (par priorité) sinon un message routinier varié.
 function marieMessage(kg, date){
+  const seed=strHash(date);
   const idx=data.findIndex(e=>e.date===date);
   const prev=idx>0 ? data[idx-1] : null;
-  if(!prev) return "Enchantée, moi c'est Marie ! J'ai bien noté ta toute première pesée. On suit ça ensemble, à bientôt !";
+
+  // ---- Jalons & paliers : un seul à la fois, par ordre de priorité ----
+  if(goal>0 && Math.abs(kg-goal)<=0.2)
+    return `Objectif atteint 🏝️ ${fmt(goal)} kg ! Quel parcours… je suis vraiment fière de toi. Savoure ce moment !`;
+  if(isNewLow(kg, date))
+    return `Nouveau record perso : ${fmt(kg)} kg, ton poids le plus bas depuis que tu suis ! Bravo, c'est le fruit de ta régularité. 🎉`;
+  const st=streakEndingAt(date);
+  if(STREAK_MILESTONES[st])
+    return `${st} jours de suivi d'affilée — ${STREAK_MILESTONES[st]} ! Ta constance est admirable. 🎉`;
+  if(COUNT_MILESTONES.includes(data.length))
+    return `${data.length}ᵉ pesée enregistrée 🎉 Tu construis un vrai historique — c'est exactement comme ça qu'on voit les tendances !`;
+  if(goal>0 && prev){
+    const dNow=Math.abs(kg-goal), dPrev=Math.abs(prev.kg-goal);
+    if(dNow>0.2 && dNow<=1 && dNow<dPrev)
+      return `Plus que ${fmt(dNow)} kg avant ton objectif — tu y es presque, continue !`;
+  }
+
+  // ---- Message routinier, varié selon la date ----
+  if(!prev) return pick(MSG_FIRST, seed);
   const g=Math.round((kg-prev.kg)*1000);
-  if(g<0) return `Bravo, tu as perdu ${Math.abs(g)} g ! Tu es sur la bonne voie, continue comme ça !`;
-  if(g>0) return "Le poids change d'un jour à l'autre, c'est tout à fait normal et ça ne définit rien. L'important c'est la tendance sur la durée. Je suis fière de toi, continue à prendre soin de toi !";
-  return "Pile le même poids qu'avant ! La régularité, c'est déjà une belle victoire.";
+  if(g<0) return pick(MSG_DOWN, seed)(Math.abs(g));
+  if(g>0) return pick(MSG_UP, seed);
+  return pick(MSG_FLAT, seed);
 }
 
 let _dlgTimer=null, _audioCtx=null, _clipSrc=null, _wheelSilent=false;
