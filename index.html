@@ -142,6 +142,8 @@
   .row .date small{display:block;color:var(--muted);font-size:11px;margin-top:2px}
   .row .right{display:flex;align-items:center;gap:12px}
   .row .w{font-size:16px;font-weight:700}
+  .row .date .note{display:block;color:var(--muted);font-size:12px;margin-top:5px;
+    line-height:1.35;max-width:34ch;white-space:normal;font-style:italic;opacity:.92}
   .row .delta{font-size:12px;font-weight:600;min-width:54px;text-align:right}
   .row .del{background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:4px}
   .delta.up{color:var(--bad)} .delta.down{color:var(--good)} .delta.flat{color:var(--muted)}
@@ -224,6 +226,11 @@
   .primary-btn{width:100%;background:var(--accent);color:var(--on-accent);border:none;font-weight:800;
     font-size:16px;padding:16px;border-radius:14px;cursor:pointer}
   .primary-btn:active{transform:scale(.99)}
+  .note-input{width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--line);
+    color:var(--txt);font-size:15px;font-family:inherit;padding:12px 13px;border-radius:13px;
+    resize:none;margin-bottom:12px;line-height:1.4}
+  .note-input:focus{outline:none;border-color:var(--accent)}
+  .note-input::placeholder{color:var(--muted);font-style:italic}
 
   /* Sélecteur de thème */
   .themerow{display:flex;gap:9px;margin-bottom:9px}
@@ -331,6 +338,8 @@
     <div class="punit">kg</div>
     <div class="center-band"></div>
   </div>
+  <textarea id="noteInput" class="note-input" rows="2" maxlength="500"
+            placeholder="Une note ? (ex : barbecue entre amis hier 🍖)"></textarea>
   <button id="pickValidate" class="primary-btn">Valider</button>
 </div>
 
@@ -425,7 +434,8 @@ function parseEnvelope(s){
   else if(d && Array.isArray(d.entries)){ entries=d.entries; tombs=(d.tombstones&&typeof d.tombstones==='object')?d.tombstones:{}; }
   else throw new Error('format invalide');
   entries=entries.filter(e=>e&&typeof e.date==='string')
-    .map(e=>({date:e.date, kg:Number(e.kg), updatedAt: typeof e.updatedAt==='string'?e.updatedAt:migBaseline(e.date)}))
+    .map(e=>{ const nt=cleanNote(e.note);
+      return {date:e.date, kg:Number(e.kg), updatedAt: typeof e.updatedAt==='string'?e.updatedAt:migBaseline(e.date), ...(nt?{note:nt}:{})}; })
     .filter(e=>isFinite(e.kg));
   return {entries, tombstones:tombs};
 }
@@ -497,6 +507,8 @@ function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('sh
 function esc(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function dayNum(iso){ const [y,m,d]=iso.split('-').map(Number); return Math.floor(Date.UTC(y,m-1,d)/86400000); }
 function cssVar(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+// Note libre attachée à une pesée : nettoyée (trim) et bornée à 500 caractères. Renvoie '' si absente/vide.
+function cleanNote(n){ return typeof n==='string' ? n.trim().slice(0,500) : ''; }
 
 /* ---------- Ajouter une pesée ---------- */
 let pickedKg = null;   // poids choisi à la molette
@@ -505,10 +517,12 @@ let pickedKg = null;   // poids choisi à la molette
 function commitWeight(picked){
   const kg = Math.round(picked*1000)/1000;
   const date = $('#dateInput').value || todayISO();
+  const note = cleanNote($('#noteInput').value);
   delete tombstones[date];                 // une nouvelle pesée annule une éventuelle suppression de ce jour
   const existing = data.find(e=>e.date===date);
-  if(existing){ existing.kg = kg; existing.updatedAt = nowISO(); }   // remplace la pesée de ce jour
-  else data.push({date, kg, updatedAt: nowISO()});
+  if(existing){ existing.kg = kg; existing.updatedAt = nowISO();      // remplace la pesée de ce jour
+    if(note) existing.note = note; else delete existing.note; }
+  else data.push({date, kg, updatedAt: nowISO(), ...(note?{note}:{})});
   data.sort(byDate); save();
   $('#dateInput').value = todayISO();     // revient à aujourd'hui après l'enregistrement
   render();
@@ -705,7 +719,7 @@ let pendingUndo=null;
 function delEntry(date){
   const entry=data.find(e=>e.date===date);
   if(!entry) return;
-  pendingUndo={date:entry.date, kg:entry.kg};
+  pendingUndo={date:entry.date, kg:entry.kg, note:entry.note};
   data=data.filter(e=>e.date!==date);
   tombstones[date]=nowISO();               // marque la suppression -> propagée aux autres appareils à la synchro
   save(); render();
@@ -715,7 +729,7 @@ function undoDelete(){
   if(!pendingUndo) return;
   if(!data.some(e=>e.date===pendingUndo.date)){
     delete tombstones[pendingUndo.date];
-    data.push({date:pendingUndo.date, kg:pendingUndo.kg, updatedAt:nowISO()});
+    data.push({date:pendingUndo.date, kg:pendingUndo.kg, updatedAt:nowISO(), ...(pendingUndo.note?{note:pendingUndo.note}:{})});
     data.sort(byDate); save(); render();
   }
   pendingUndo=null; hideUndo(); toast('Suppression annulée');
@@ -945,9 +959,11 @@ function openPicker(editDate){
     if(!e) return;
     $('#dateInput').value=editDate;          // commitWeight mettra à jour CETTE date
     base=e.kg;
+    $('#noteInput').value=e.note||'';        // pré-remplit la note existante pour la corriger
     $('#pickTitle').textContent='Modifier la pesée du '+prettyDate(editDate);
   } else {
     base=currentPickValue();
+    $('#noteInput').value='';                // nouvelle pesée -> note vierge
     $('#pickTitle').textContent='Règle ton poids';
   }
   let kg=Math.floor(base), c=Math.round((base-kg)*100);   // centièmes (0..99)
@@ -982,8 +998,9 @@ function renderList(){
       const sym=g>0?'▲':g<0?'▼':'=';
       delta=`<span class="delta ${cls}">${sym} ${Math.abs(g)} g</span>`;
     } else delta=`<span class="delta flat">—</span>`;
+    const note = e.note ? `<span class="note">📝 ${esc(e.note)}</span>` : '';
     html+=`<div class="row" data-date="${esc(e.date)}" title="Toucher pour modifier">
-      <div class="date">${esc(prettyDate(e.date))}<small>${esc(e.date)}</small></div>
+      <div class="date">${esc(prettyDate(e.date))}<small>${esc(e.date)}</small>${note}</div>
       <div class="right">${delta}<span class="w">${fmt(e.kg)} kg</span>
       <button class="del" data-date="${esc(e.date)}" aria-label="Supprimer">✕</button></div>
     </div>`;
@@ -1005,8 +1022,9 @@ function download(filename, content, type){
 }
 function exportCsv(){
   if(!data.length) return toast('Aucune donnée à exporter');
-  let csv='date,poids_kg,poids_g\n';
-  data.forEach(e=>{ csv+=`${e.date},${e.kg.toFixed(3)},${Math.round(e.kg*1000)}\n`; });
+  const csvField=s=>`"${String(s).replace(/"/g,'""')}"`;   // échappe les guillemets et protège les virgules/sauts de ligne
+  let csv='date,poids_kg,poids_g,note\n';
+  data.forEach(e=>{ csv+=`${e.date},${e.kg.toFixed(3)},${Math.round(e.kg*1000)},${e.note?csvField(e.note):''}\n`; });
   download('ma-pesee-'+todayISO()+'.csv', csv, 'text/csv');
   toast('CSV exporté'); closeSheet();
 }
@@ -1078,7 +1096,7 @@ function importFile(file){
       }
       // validation + normalisation (0,1 kg)
       const valid=[]; let ignored=0;
-      imported.forEach(e=>{ if(validEntry(e)) valid.push({date:e.date, kg:Math.round(Number(e.kg)*100)/100}); else ignored++; });
+      imported.forEach(e=>{ if(validEntry(e)){ const nt=cleanNote(e.note); valid.push({date:e.date, kg:Math.round(Number(e.kg)*100)/100, ...(nt?{note:nt}:{})}); } else ignored++; });
       if(!valid.length){ toast('Aucune donnée valide dans ce fichier'); return; }
       // aperçu avant d'appliquer
       const existing=new Set(data.map(e=>e.date));
@@ -1092,7 +1110,7 @@ function importFile(file){
       // application : la valeur importée (horodatée maintenant -> prioritaire à la synchro) remplace celle du même jour
       const now=nowISO();
       const map=new Map(data.map(e=>[e.date,e]));
-      valid.forEach(e=>{ delete tombstones[e.date]; map.set(e.date, {date:e.date, kg:e.kg, updatedAt:now}); });
+      valid.forEach(e=>{ delete tombstones[e.date]; map.set(e.date, {date:e.date, kg:e.kg, updatedAt:now, ...(e.note?{note:e.note}:{})}); });
       data=[...map.values()].sort(byDate);
       save(); render(); toast(add+' ajoutée(s), '+upd+' mise(s) à jour'); closeSheet();
     }catch(err){ toast('Fichier illisible'); }
@@ -1202,7 +1220,8 @@ function mergeRemote(remote){
   if(Array.isArray(remote)){ rEntries=remote; }
   else if(remote && Array.isArray(remote.entries)){ rEntries=remote.entries; rTombs=(remote.tombstones&&typeof remote.tombstones==='object')?remote.tombstones:{}; }
   rEntries=rEntries.filter(e=>e&&typeof e.date==='string'&&isFinite(Number(e.kg)))
-    .map(e=>({date:e.date, kg:Math.round(Number(e.kg)*1000)/1000, updatedAt: typeof e.updatedAt==='string'?e.updatedAt:migBaseline(e.date)}));
+    .map(e=>{ const nt=cleanNote(e.note);
+      return {date:e.date, kg:Math.round(Number(e.kg)*1000)/1000, updatedAt: typeof e.updatedAt==='string'?e.updatedAt:migBaseline(e.date), ...(nt?{note:nt}:{})}; });
 
   // état retenu par date ; en cas d'égalité d'horodatage, la pesée l'emporte sur la suppression (préserve la donnée).
   const state=new Map();
@@ -1211,15 +1230,15 @@ function mergeRemote(remote){
     const cur=state.get(date);
     if(!cur || t>cur.t || (t===cur.t && !payload.deleted)) state.set(date, {t, ...payload});
   };
-  data.forEach(e=>consider(e.date, {kg:e.kg, updatedAt:e.updatedAt||migBaseline(e.date)}));
+  data.forEach(e=>consider(e.date, {kg:e.kg, note:e.note, updatedAt:e.updatedAt||migBaseline(e.date)}));
   for(const d in tombstones) consider(d, {deleted:true, updatedAt:tombstones[d]});
-  rEntries.forEach(e=>consider(e.date, {kg:e.kg, updatedAt:e.updatedAt}));
+  rEntries.forEach(e=>consider(e.date, {kg:e.kg, note:e.note, updatedAt:e.updatedAt}));
   for(const d in rTombs) consider(d, {deleted:true, updatedAt:rTombs[d]});
 
   const newData=[], newTombs={};
   for(const [date, s] of state){
     if(s.deleted) newTombs[date]=s.updatedAt;
-    else newData.push({date, kg:s.kg, updatedAt:s.updatedAt});
+    else newData.push({date, kg:s.kg, updatedAt:s.updatedAt, ...(cleanNote(s.note)?{note:cleanNote(s.note)}:{})});
   }
   data=newData.sort(byDate);
   tombstones=newTombs;
